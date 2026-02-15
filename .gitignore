@@ -10,8 +10,10 @@ wheels/
 .venv
 
 # data
-data/
+data/*.tar.gz
+*.pdf
 papers/
+docs/md
 
 # Jupyter
 .ipynb_checkpoints/

@@ -33,10 +33,10 @@ def train(
     trainer = PINNTrainer(spatial_dim=spatial_dim, lr=lr)
 
     # Files
-    gps_files = [
-        "data/kinematic_data/gps_strain_rayisi2016.csv",
-        "data/kinematic_data/gps_strain_khorrami1390.csv",
-    ]
+    # Files - Dynamic Glob
+    import glob
+
+    gps_files = glob.glob("data/kinematic_data/gps_strain_*.csv")
 
     # Filter existing
     import os

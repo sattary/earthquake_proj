@@ -273,6 +273,10 @@ class PINNTrainer:
                     }
                 )
 
+            # Save Checkpoints
+            if (epoch + 1) % 1000 == 0:
+                self.save_model(f"checkpoint_epoch_{epoch + 1}.pth")
+
         self.save_model("final_model.pth")
 
     def save_model(self, filename: str):
