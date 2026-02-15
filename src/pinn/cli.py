@@ -40,6 +40,7 @@ def train(
             typer.echo(f"Loading config from {config}: {params}")
             # Override defaults with config
             lr = params.get("lr", lr)
+            w_data = params.get("w_data", w_data)
             w_pde = params.get("w_pde", w_pde)
             w_const = params.get("w_const", w_const)
             w_bc = params.get("w_bc", w_bc)

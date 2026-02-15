@@ -5,6 +5,9 @@ import os
 from src.pinn.trainer import PINNTrainer
 import torch
 import glob
+from src.pinn.data import KinematicData
+from src.pinn.physics import Physics
+from src.pinn.velocity_model import VelocityModel
 
 app = typer.Typer()
 
@@ -12,7 +15,6 @@ app = typer.Typer()
 class OptunaTrainer(PINNTrainer):
     """
     Subclass of PINNTrainer to enable Optuna integration.
-    Overwrites train method to report intermediate values and support pruning.
     """
 
     def train_optuna(
@@ -28,38 +30,31 @@ class OptunaTrainer(PINNTrainer):
         w_pde = trial.suggest_float("w_pde", 1e-5, 1.0, log=True)
         w_const = trial.suggest_float("w_const", 1e-5, 1.0, log=True)
         w_bc = trial.suggest_float("w_bc", 1e-3, 100.0, log=True)
-        # w_data is fixed at 1.0 as a reference anchor
         w_data = 1.0
 
-        # Re-initialize optimizer with suggested LR
+        # Re-initialize optimizer
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
 
-        # Basic Setup (Data Loading)
-        # For tuning, we use a smaller subset or just run for fewer epochs
-        from src.pinn.data import KinematicData
-        from src.pinn.physics import Physics
-        from src.pinn.velocity_model import VelocityModel
-        from tqdm import tqdm
-
         dataset = KinematicData(gps_files)
-        # Just use cpu for data processing, model is on self.device
+        if len(dataset) == 0:
+            return 1e10
 
-        # Velocity Model
+        self.transformer = dataset.transformer
+        spatial_dim = self.model.spatial_dim
+
         vel_model = None
-        if self.model.spatial_dim == 3 and velocity_file:
-            vel_model = VelocityModel(velocity_file, dataset.transformer)
+        if spatial_dim == 3 and velocity_file:
+            vel_model = VelocityModel(velocity_file, self.transformer)
 
         dataloader = torch.utils.data.DataLoader(
             dataset, batch_size=len(dataset), shuffle=True
         )
 
-        # Domain Bounds
         min_x = dataset.coords[:, 0].min().item()
         max_x = dataset.coords[:, 0].max().item()
         min_y = dataset.coords[:, 1].min().item()
         max_y = dataset.coords[:, 1].max().item()
 
-        # Training Loop
         for epoch in range(epochs):
             self.model.train()
             epoch_loss = 0.0
@@ -68,86 +63,37 @@ class OptunaTrainer(PINNTrainer):
                 x_batch = x_batch.to(self.device)
                 theta_batch = theta_batch.to(self.device)
 
-                # Collocation
-                x_coll = torch.rand(n_coll, self.model.spatial_dim, device=self.device)
+                x_coll = torch.rand(n_coll, spatial_dim, device=self.device)
                 x_coll[:, 0] = x_coll[:, 0] * (max_x - min_x) + min_x
                 x_coll[:, 1] = x_coll[:, 1] * (max_y - min_y) + min_y
-                if self.model.spatial_dim == 3:
-                    x_coll[:, 2] = x_coll[:, 2] * 2.0 - 1.0  # Z norm
 
-                # Surface BC
-                x_surf = None
-                if self.model.spatial_dim == 3:
+                if spatial_dim == 3:
+                    x_coll[:, 2] = x_coll[:, 2] * 2.0 - 1.0
                     x_surf = torch.rand(n_coll // 4, 3, device=self.device)
                     x_surf[:, 0] = x_surf[:, 0] * (max_x - min_x) + min_x
                     x_surf[:, 1] = x_surf[:, 1] * (max_y - min_y) + min_y
-                    x_surf[:, 2] = -1.0  # Surface
-
-                # Forward Data
-                if self.model.spatial_dim == 3:
+                    x_surf[:, 2] = -1.0
                     z_surf = -1.0 * torch.ones(x_batch.shape[0], 1, device=self.device)
                     x_batch_in = torch.cat([x_batch, z_surf], dim=1)
                 else:
+                    x_surf = None
                     x_batch_in = x_batch
 
-                out_data = self.model(x_batch_in)
+                # Use refactored logic from parent class
+                loss_data = self.compute_data_loss(x_batch_in, theta_batch)
 
-                # Indices and Loss Calc (duplicated from trainer.py for clarity, could be refactored)
-                if self.model.spatial_dim == 3:
-                    sxx_d, syy_d, sxy_d = out_data[:, 3], out_data[:, 4], out_data[:, 6]
+                if spatial_dim == 3:
+                    loss_pde, loss_const, loss_bc = self.compute_physics_losses_3d(
+                        x_coll, x_surf, vel_model
+                    )
                 else:
-                    sxx_d, syy_d, sxy_d = out_data[:, 2], out_data[:, 3], out_data[:, 4]
-
-                theta_pred = 0.5 * torch.atan2(2 * sxy_d, sxx_d - syy_d)
-                theta_math = torch.pi / 2 - theta_batch
-                loss_data = torch.mean(torch.sin(2 * (theta_pred - theta_math)) ** 2)
-
-                # PDE Loss
-                loss_pde = 0.0
-                loss_const = 0.0
-                loss_bc = 0.0
-
-                scale_x = dataset.transformer.scale
-
-                if self.model.spatial_dim == 3:
-                    scale_z = 15000.0
-                    rho_val, mu_val = 2700.0, 30e9
-                    eta_val = 1e21
-
-                    if vel_model:
-                        scale_z = (vel_model.max_dep - vel_model.min_dep) * 1000.0 / 2.0
-                        rho_t, mu_t = vel_model.get_material_properties(
-                            x_coll[:, 0], x_coll[:, 1], x_coll[:, 2]
-                        )
-                        eta_val = mu_t.to(self.device).view(-1, 1) * 3.1536e11
-                        rho_val = rho_t.to(self.device).view(
-                            -1, 1
-                        )  # view for broadcast
-
-                    # Momentum
-                    rx, ry, rz = Physics.momentum_balance_3d(
-                        self.model,
-                        x_coll,
-                        rho=rho_val,
-                        scale_x=scale_x,
-                        scale_z=scale_z,
+                    res_x, res_y = Physics.momentum_balance_2d(self.model, x_coll)
+                    loss_pde = torch.mean(res_x**2 + res_y**2)
+                    res_c_xx, res_c_yy, res_c_xy = Physics.constitutive_2d(
+                        self.model, x_coll, eta=1.0
                     )
-                    loss_pde = torch.mean(rx**2 + ry**2 + rz**2)
-
-                    # Constitutive
-                    c_loss_tuple = Physics.constitutive_3d(
-                        self.model,
-                        x_coll,
-                        eta=eta_val,
-                        scale_x=scale_x,
-                        scale_z=scale_z,
-                    )
-                    # Sum of squares of all constitutive residuals (7 terms)
-                    loss_const = sum([torch.mean(r**2) for r in c_loss_tuple]) / 7.0
-
-                    # BC
-                    bx, by, bz = Physics.traction_free_surface(self.model, x_surf)
-                    loss_bc = torch.mean(bx**2 + by**2 + bz**2)
+                    loss_const = torch.mean(res_c_xx**2 + res_c_yy**2 + res_c_xy**2)
+                    loss_bc = torch.tensor(0.0, device=self.device)
 
                 total_loss = (
                     w_data * loss_data
@@ -159,10 +105,8 @@ class OptunaTrainer(PINNTrainer):
                 self.optimizer.zero_grad()
                 total_loss.backward()
                 self.optimizer.step()
-
                 epoch_loss = total_loss.item()
 
-            # Reporting to Optuna
             trial.report(epoch_loss, epoch)
             if trial.should_prune():
                 raise optuna.exceptions.TrialPruned()
@@ -182,9 +126,7 @@ def run_tuning(
         return
 
     def objective(trial):
-        trainer = OptunaTrainer(
-            spatial_dim=spatial_dim, lr=1e-3
-        )  # LR overridden in train_optuna
+        trainer = OptunaTrainer(spatial_dim=spatial_dim)
         return trainer.train_optuna(
             trial, gps_files, epochs=epochs, n_coll=1000, velocity_file=velocity_file
         )
@@ -193,19 +135,16 @@ def run_tuning(
     study.optimize(objective, n_trials=n_trials)
 
     print("\n--- Tuning Complete ---")
-    print("Best Trial:")
-    print(study.best_trial.params)
+    print(f"Best Trial Score: {study.best_trial.value:.4f}")
 
-    # Save Results for Publication
     os.makedirs("results/tables", exist_ok=True)
-    df = study.trials_dataframe()
-    df.to_csv("results/tables/optuna_tuning_results.csv", index=False)
-    print("Saved tuning results to results/tables/optuna_tuning_results.csv")
-
-    # Save best params
-    import json
+    study.trials_dataframe().to_csv(
+        "results/tables/optuna_tuning_results.csv", index=False
+    )
 
     with open("results/tables/best_params.json", "w") as f:
+        import json
+
         json.dump(study.best_trial.params, f, indent=4)
     print("Saved best params to results/tables/best_params.json")
 

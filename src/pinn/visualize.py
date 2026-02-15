@@ -2,16 +2,24 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
+from typing import Optional
+import os
+import typer
 from src.pinn.model import SpatialPINN
 from src.pinn.velocity_model import VelocityModel
 from src.pinn.data import KinematicData
-import typer
 
 app = typer.Typer()
 
 
 class Visualizer:
-    def __init__(self, model_path: str, spatial_dim: int = 3, device: str = "cpu"):
+    def __init__(
+        self,
+        model_path: str,
+        velocity_file: Optional[str] = None,
+        spatial_dim: int = 3,
+        device: str = "cpu",
+    ):
         self.device = torch.device(device)
         self.model = SpatialPINN(spatial_dim=spatial_dim).to(self.device)
         # Load weights
@@ -22,8 +30,6 @@ class Visualizer:
 
         # Load Transformer from Data (to get bounds/scaling)
         # Hack: Initialize a dummy KinematicData to get the transformer
-        # In a real app, successful training should save the transformer state.
-        # Here we assume the same data file is available.
         gps_files = list(Path("data/kinematic_data").glob("gps_strain_*.csv"))
         if not gps_files:
             raise FileNotFoundError(
@@ -45,6 +51,24 @@ class Visualizer:
         self.min_y_norm = self.dataset.coords[:, 1].min().item()
         self.max_y_norm = self.dataset.coords[:, 1].max().item()
 
+        # Velocity Model for Z-Bounds
+        self.z_min_km = 0.0
+        self.z_max_km = 60.0  # Default fallback
+
+        if velocity_file and spatial_dim == 3:
+            try:
+                # We need the transformer to init VelocityModel. We have it.
+                # VelocityModel constructor reads the file.
+                vm = VelocityModel(velocity_file, self.transformer)
+                self.z_min_km = vm.min_dep
+                self.z_max_km = vm.max_dep
+                print(
+                    f"Loaded Velocity Model Depth Range: {self.z_min_km}-{self.z_max_km} km"
+                )
+            except Exception as e:
+                print(f"Warning: Could not load velocity model for bounds: {e}")
+                print("Using default depth range 0-60km.")
+
     def predict_grid(self, depth_km: float, resolution: int = 100):
         """
         Predict stress and velocity on a horizontal grid at fixed depth.
@@ -55,20 +79,10 @@ class Visualizer:
         X, Y = np.meshgrid(x, y)
 
         # Z coordinate (Normalized)
-        # transform depth_km to z_norm.
-        # CAUTION: We need to know the z-bounds used during training.
-        # In trainer.py, we assumed scale_z = 15km or confirmed via velocity model.
-        # Only VelocityModel knows the true Z bounds.
-        # Let's assume standard crust: 0 to 40km?
-        # Trainer used: scale_z = (max_dep - min_dep) / 2
-        # VelocityModel loaded Pwave.3D.txt.
-        # Let's load VelocityModel to be sure, or pass it in.
-        # For now, let's assume z is normalized [-1, 1].
-        # If trainer used full range of velocity model [0, 60km], then -1=0km, 1=60km.
-        # Let's map depth_km to z_norm [-1, 1].
-        z_min_km = 0.0
-        z_max_km = 60.0  # Approximation based on Pwave.3D
-        z_norm = (depth_km - z_min_km) / (z_max_km - z_min_km) * 2.0 - 1.0
+        # Use detected bounds
+        z_norm = (depth_km - self.z_min_km) / (
+            self.z_max_km - self.z_min_km
+        ) * 2.0 - 1.0
 
         Z = np.full_like(X, z_norm)
 
@@ -102,16 +116,6 @@ class Visualizer:
         X, Y, sxx, syy, szz, sxy = self.predict_grid(depth_km)
 
         # Calculate Max Horizontal Stress Direction (SHmax)
-        # Azimuth of S1 (Most compressive).
-        # Math angle: 0.5 * atan2(2*tau, sig_x - sig_y)
-        # Note: In geology, compression is often positive. Here tension is positive (physics convention).
-        # So most compressive is MINIMUM numerical value (most negative).
-        # S_Hmax is direction of S1 (Most compressive horizontal stress).
-        # Angle theta = 0.5 * atan2(2*sxy, sxx - syy) gives direction of Max Principal Stress S1 (Algebraic Max).
-        # If Sxx, Syy are negative (compression), Algebraic Max is Least Compressive (Tension axis).
-        # So this gives T-axis.
-        # P-axis (Compression) is theta + 90.
-
         theta_T = 0.5 * np.arctan2(2 * sxy, sxx - syy)
         theta_P = theta_T + np.pi / 2
 
@@ -119,7 +123,6 @@ class Visualizer:
         fig, ax = plt.subplots(figsize=(10, 8))
 
         # P-axis ticks (Compression direction)
-        # Quiver plot
         skip = 5
         ax.quiver(
             X[::skip, ::skip],
@@ -158,16 +161,14 @@ class Visualizer:
         """
         X, Y, sxx, syy, szz, sxy = self.predict_grid(depth_km)
 
-        # We need to get V from model, but predict_grid currently only returns stress.
-        # Let's modify predict_grid or just do it here.
-        # Re-using logic for simplicity.
+        # We need to get V from model. Re-using grid generation logic.
         resolution = 100
         x = np.linspace(self.min_x_norm, self.max_x_norm, resolution)
         y = np.linspace(self.min_y_norm, self.max_y_norm, resolution)
         X_grid, Y_grid = np.meshgrid(x, y)
-        z_min_km = 0.0
-        z_max_km = 60.0
-        z_norm = (depth_km - z_min_km) / (z_max_km - z_min_km) * 2.0 - 1.0
+        z_norm = (depth_km - self.z_min_km) / (
+            self.z_max_km - self.z_min_km
+        ) * 2.0 - 1.0
         Z = np.full_like(X_grid, z_norm)
         pts = np.stack([X_grid.flatten(), Y_grid.flatten(), Z.flatten()], axis=1)
         pts_tensor = torch.tensor(pts, dtype=torch.float32, device=self.device)
@@ -194,16 +195,16 @@ class Visualizer:
 
 
 @app.command()
-@app.command()
 def plot(
     model_path: str = "checkpoints/final_model.pth",
     depth: float = 10.0,
+    velocity_file: Optional[str] = "data/Morteza_2023/Vel/Pwave.3D.txt",
     output_stress: str = "results/figs/stress_map.png",
     output_velocity: str = "results/figs/velocity_map.png",
 ):
     try:
         os.makedirs("results/figs", exist_ok=True)
-        vis = Visualizer(model_path)
+        vis = Visualizer(model_path, velocity_file=velocity_file)
         vis.plot_stress_map(depth, output_stress)
         vis.plot_velocity_magnitude(depth, output_velocity)
         print(f"Visualization complete. Saved to {output_stress} and {output_velocity}")
@@ -212,4 +213,4 @@ def plot(
 
 
 if __name__ == "__main__":
-    typer.run(plot)
+    app()
