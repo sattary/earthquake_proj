@@ -1,0 +1,85 @@
+\documentclass[11pt, a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{natbib}
+\usepackage{titlesec}
+\usepackage{setspace}
+
+% Geometry setup
+\geometry{top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm}
+
+% Formatting
+\titleformat{\section}{\large\bfseries}{\thesection}{1em}{}
+\onehalfspacing
+
+% Colors for hyperlinks
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=cyan,
+    citecolor=blue,
+}
+
+\title{\textbf{Inverting the Lithospheric Stress Field of Central Iran: \\ A Physics-Informed Deep Learning Approach using Sparse Kinematic Data}}
+\author{\textbf{Research Proposal}}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Accurate estimation of the lithospheric stress field is critical for earthquake forecasting but remains challenging due to sparse \textit{in-situ} measurements. Traditional Finite Element Models (FEMs) require complex meshing and explicit boundary conditions that are often unknown. We propose a novel \textbf{Physics-Informed Neural Network (PINN)} framework to invert for the 3D continuous stress tensor of Central Iran. Unlike previous studies that assume purely elastic rheology, our model incorporates \textbf{Maxwell Viscoelasticity} to capture time-dependent stress relaxation. Furthermore, we introduce a method to constrain the network using only \textbf{sparse GPS azimuths} (orientations), solving a highly non-linear inverse problem. This approach promises a mesh-free, physics-consistent stress map that outperforms statistical baselines (XGBoost) and standard Coulomb Stress Transfer (CST) in forecasting seismicity.
+\end{abstract}
+
+\section{Scientific Rationale \& Gap Analysis}
+Current state-of-the-art methods generally fall into two categories:
+\begin{enumerate}
+    \item \textbf{Data-Driven (e.g., XGBoost)}: Excellent at finding correlations but lacks physical constraints, leading to poor generalization in data-sparse regions.
+    \item \textbf{Classical Physics (e.g., FEM/CST)}: Physically rigorous but limited by mesh quality and the need for unknown boundary conditions.
+\end{enumerate}
+
+\subsection*{The Gap}
+Recent works (e.g., \textit{Zhang et al., Sci. Rep. 2022}) have demonstrated PINNs for stress inversion but rely on simplified \textbf{Linear Elastic} assumptions and dense synthetic data. No study has yet applied \textbf{Viscoelastic PINNs} to invert for the stress field of the complex \textbf{Central Iranian collision zone} using real, sparse \textbf{GPS strain azimuths}.
+
+\section{Methodology}
+
+\subsection{Physics-Informed Architecture}
+We define a deep neural network $\mathcal{N}_\theta(x,y,z,t)$ that approximates the stress tensor $\sigma_{ij}$ and velocity field $v_i$. The Loss Function $\mathcal{L}$ minimizes the residuals of the momentum balance and constitutive equations:
+\begin{equation}
+    \mathcal{L}_{total} = \mathcal{L}_{metric} + \lambda_1 \mathcal{L}_{PDE} + \lambda_2 \mathcal{L}_{BC}
+\end{equation}
+where:
+\begin{itemize}
+    \item $\mathcal{L}_{PDE}$ (Momentum): $\nabla \cdot \sigma + \rho g = 0$
+    \item $\mathcal{L}_{PDE}$ (Constitutive): $\dot{\epsilon}_{ij} = \frac{1}{2\mu}\dot{\sigma}_{ij} + \frac{1}{2\eta}\sigma_{ij}$ (Maxwell Viscoelasticity)
+\end{itemize}
+
+\subsection{Data Integration (The "Inverse" Problem)}
+We utilize the provided \texttt{kinematic\_data} (GPS strain rates). Crucially, these data provide \textbf{orientations} (azimuths) rather than absolute stress magnitudes. We enforce this constraint by penalizing the misalignment between the predicted principal stress direction and the observed GPS strain azimuth:
+\begin{equation}
+    \mathcal{L}_{data} = \sum_{k} (1 - \cos(\theta_{pred}^{(k)} - \theta_{obs}^{(k)}))^2
+\end{equation}
+
+\subsection{Execution Roadmap}
+\begin{enumerate}
+    \item \textbf{Phase I (Validation)}: Implement a 2D Plane Stress model to validate the formulation against a synthetic "toy" fault interaction.
+    \item \textbf{Phase II (Main)}: Scale to full 3D Lithospheric model using the Central Iran velocity structure (\texttt{Pwave.3D.txt}) as a proxy for heterogeneous material properties ($\mu(x)$).
+\end{enumerate}
+
+\section{Validation \& Benchmarking}
+To satisfy the rigor required by high-impact journals, we will benchmark against:
+\begin{enumerate}
+    \item \textbf{Coulomb Stress Transfer (CST)}: The standard physics-based predictor.
+    \item \textbf{XGBoost (Spatial Susceptibility)}: The standard ML baseline.
+\end{enumerate}
+We will demonstrate that the PINN model achieves superior log-likelihood in \textbf{hindcasting} historical seismicity (2006-2023) compared to these baselines.
+
+\section{Expected Impact}
+This study will provide the first-ever continuous, physics-consistent 3D stress map of Central Iran. By demonstrating the efficacy of Viscoelastic PINNs in data-sparse regions, we establish a new framework for earthquake potential imaging applicable to collision zones worldwide.
+
+\end{document}
