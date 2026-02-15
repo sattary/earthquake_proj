@@ -11,7 +11,8 @@ def train(
     lr: float = typer.Option(1e-3, help="Learning rate"),
     n_coll: int = typer.Option(1000, help="Number of physics collocation points"),
     w_data: float = typer.Option(1.0, help="Weight for Data Loss"),
-    w_pde: float = typer.Option(0.1, help="Weight for PDE Loss"),
+    w_pde: float = typer.Option(1e-4, help="Weight for PDE Loss"),
+    w_const: float = typer.Option(1e-4, help="Weight for Constitutive Law Loss"),
     gpu: bool = typer.Option(True, help="Use GPU if available"),
 ):
     """
@@ -35,7 +36,14 @@ def train(
         raise typer.Exit(code=1)
 
     typer.echo(f"Starting training on {len(valid_files)} GPS files...")
-    trainer.train(valid_files, epochs=epochs, n_coll=n_coll, w_data=w_data, w_pde=w_pde)
+    trainer.train(
+        valid_files,
+        epochs=epochs,
+        n_coll=n_coll,
+        w_data=w_data,
+        w_pde=w_pde,
+        w_const=w_const,
+    )
     typer.echo("Training complete.")
 
 

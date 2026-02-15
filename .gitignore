@@ -26,3 +26,4 @@ papers/
 *.fdb_latexmk
 *.fls
 *.synctex.gz
+notebooks/.bak/

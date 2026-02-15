@@ -2,6 +2,7 @@ import torch
 import pandas as pd
 import numpy as np
 from torch.utils.data import Dataset
+from src.pinn.utils import CoordinateTransformer
 
 
 class KinematicData(Dataset):
@@ -22,11 +23,18 @@ class KinematicData(Dataset):
             # Expecting: Longitude, Latitude, azimuth_value
             self.data = pd.concat([self.data, df], ignore_index=True)
 
-        # Normalize coordinates (Simple Min-Max for now, or load a scaler)
-        self.long = self.data["longitude"].values.astype(np.float32)
-        self.lat = self.data["latitude"].values.astype(np.float32)
-        self.azimuths = self.data["azimuth_value"].values.astype(np.float32)
+        # Init Transformer
+        self.transformer = CoordinateTransformer(
+            self.data["latitude"].values, self.data["longitude"].values
+        )
 
+        # Normalize coordinates
+        # self.coords is (N, 2) tensor [-1, 1]
+        self.coords = self.transformer.to_normalized(
+            self.data["latitude"].values, self.data["longitude"].values
+        )
+
+        self.azimuths = self.data["azimuth_value"].values.astype(np.float32)
         # Convert azimuth to radians
         self.azimuths_rad = np.deg2rad(self.azimuths)
 
@@ -34,8 +42,9 @@ class KinematicData(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        x = self.long[idx]
-        y = self.lat[idx]
+        # x_norm, y_norm
+        x = self.coords[idx, 0]
+        y = self.coords[idx, 1]
         theta = self.azimuths_rad[idx]
         return torch.tensor([x, y]), torch.tensor(theta)
 
