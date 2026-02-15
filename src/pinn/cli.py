@@ -63,5 +63,25 @@ def train(
     typer.echo("Training complete.")
 
 
+@app.command()
+def tune(
+    trials: int = typer.Option(20, help="Number of Optuna trials"),
+    epochs: int = typer.Option(200, help="Epochs per trial"),
+    spatial_dim: int = typer.Option(3, help="Spatial Dimension"),
+    velocity_file: Optional[str] = typer.Option(None, help="Path to Velocity Model"),
+):
+    """
+    Run Hyperparameter Tuning with Optuna.
+    """
+    from src.pinn.tune import run_tuning
+
+    run_tuning(
+        n_trials=trials,
+        epochs=epochs,
+        spatial_dim=spatial_dim,
+        velocity_file=velocity_file,
+    )
+
+
 if __name__ == "__main__":
     app()
