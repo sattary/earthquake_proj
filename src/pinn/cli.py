@@ -26,10 +26,24 @@ def train(
     velocity_file: Optional[str] = typer.Option(
         None, help="Path to Pwave.3D.txt (required for 3D)"
     ),
+    config: Optional[str] = typer.Option(None, help="Path to best_params.json"),
 ):
     """
     Train the PINN model on sparse GPS data.
     """
+    # Load Config if provided
+    import json
+
+    if config:
+        with open(config, "r") as f:
+            params = json.load(f)
+            typer.echo(f"Loading config from {config}: {params}")
+            # Override defaults with config
+            lr = params.get("lr", lr)
+            w_pde = params.get("w_pde", w_pde)
+            w_const = params.get("w_const", w_const)
+            w_bc = params.get("w_bc", w_bc)
+
     trainer = PINNTrainer(spatial_dim=spatial_dim, lr=lr)
 
     # Files
