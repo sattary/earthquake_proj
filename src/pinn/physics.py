@@ -163,8 +163,9 @@ class Physics:
         res_z = div_z + rho * g
 
         # Normalize (Non-dimensionalize) the Residuals
-        # Factor: scale_x / S0 (using horizontal scale as reference for normalization)
-        norm = scale_x / S0
+        # Scale by weight of the crust (rho*g) so that errors are fractional
+        # and on the same order as tectonic stress gradients.
+        norm = 1.0 / (rho * g)
         return res_x * norm, res_y * norm, res_z * norm
 
     @staticmethod
