@@ -43,8 +43,14 @@ Current state-of-the-art methods generally fall into two categories:
     \item \textbf{Classical Physics (e.g., FEM/CST)}: Physically rigorous but limited by mesh quality and the need for unknown boundary conditions.
 \end{enumerate}
 
-\subsection*{The Gap}
-Recent works (e.g., \textit{Zhang et al., Sci. Rep. 2022}) have demonstrated PINNs for stress inversion but rely on simplified \textbf{Linear Elastic} assumptions and dense synthetic data. No study has yet applied \textbf{Viscoelastic PINNs} to invert for the stress field of the complex \textbf{Central Iranian collision zone} using real, sparse \textbf{GPS strain azimuths}.
+\subsection*{The Gap \& Novelty (2022-2026 Landscape)}
+A review of recent literature confirms that while components of this method exist, their synthesis for the Iranian Plateau is unique:
+\begin{itemize}
+    \item \textbf{Zhang et al. (2022)}: Used PINNs for stress inversion but assumed purely elastic regimes and relied on dense synthetic data.
+    \item \textbf{ViscoelasticNet (2023)}: Applied viscoelastic PINNs to non-Newtonian fluids, lacking the background stress complexities of tectonics.
+    \item \textbf{Degen et al. (2023)}: Modeled general geodynamics with synthetic global models.
+\end{itemize}
+\textbf{No study has yet applied Viscoelastic PINNs to invert for the 3D tectonic stress tensor} using only sparse \textbf{orientation constraints} (GPS azimuths) in a complex continental collision zone. This solves the ``inverse problem'' without the need for dense ground truth magnitude data.
 
 \section{Methodology}
 
@@ -56,7 +62,10 @@ We define a deep neural network $\mathcal{N}_\theta(x,y,z,t)$ that approximates 
 where:
 \begin{itemize}
     \item $\mathcal{L}_{PDE}$ (Momentum): $\nabla \cdot \sigma + \rho g = 0$
-    \item $\mathcal{L}_{PDE}$ (Constitutive): $\dot{\epsilon}_{ij} = \frac{1}{2\mu}\dot{\sigma}_{ij} + \frac{1}{2\eta}\sigma_{ij}$ (Maxwell Viscoelasticity)
+    \item $\mathcal{L}_{PDE}$ (Constitutive): $\dot{\epsilon}_{ij} = \frac{1}{2\mu}\dot{\sigma}_{ij} + \frac{1}{2\eta}\sigma_{ij}$ (Maxwell Viscoelasticity).
+    \begin{itemize}
+        \item \textit{Justification}: For present-day stress inversion (10-100 yr), a linear Maxwell model with spatially heterogeneous viscosity $\eta(x)$ serves as a parsimonious proxy for non-linear power-law rheology.
+    \end{itemize}
 \end{itemize}
 
 \subsection{Data Integration (The "Inverse" Problem)}
@@ -72,12 +81,12 @@ We utilize the provided \texttt{kinematic\_data} (GPS strain rates). Crucially, 
 \end{enumerate}
 
 \section{Validation \& Benchmarking}
-To satisfy the rigor required by high-impact journals, we will benchmark against:
+To meet the rigorous standards of high-impact journals (\textit{Nature Communications}), we establish the following validation protocols:
 \begin{enumerate}
-    \item \textbf{Coulomb Stress Transfer (CST)}: The standard physics-based predictor.
-    \item \textbf{XGBoost (Spatial Susceptibility)}: The standard ML baseline.
+    \item \textbf{Andersonian Consistency}: The inverted stress tensor must match dominant faulting styles (e.g., vertical $\sigma_3$ in Zagros reverse faulting zones).
+    \item \textbf{Borehole Breakout (BBO) Comparison}: We will validate against \textit{in-situ} stress orientations from the \textbf{World Stress Map (WSM 2025)}. A successful model must achieve an angular misfit of $< \textbf{15$^\circ$-20$^\circ$}$.
+    \item \textbf{Seismicity Hindcasting}: Comparing log-likelihood scores against \textbf{Coulomb Stress Transfer (CST)} and \textbf{XGBoost} baselines for historical events (2006-2023).
 \end{enumerate}
-We will demonstrate that the PINN model achieves superior log-likelihood in \textbf{hindcasting} historical seismicity (2006-2023) compared to these baselines.
 
 \section{Expected Impact}
 This study will provide the first-ever continuous, physics-consistent 3D stress map of Central Iran. By demonstrating the efficacy of Viscoelastic PINNs in data-sparse regions, we establish a new framework for earthquake potential imaging applicable to collision zones worldwide.
