@@ -196,14 +196,18 @@ def run_tuning(
     print("Best Trial:")
     print(study.best_trial.params)
 
-    # Save best params to a file for the main CLI to pick up?
-    # Or just print them for the user to copy-paste into the CLI command?
-    # For now, print. In a totally automated pipeline, we'd save to params.json.
+    # Save Results for Publication
+    os.makedirs("results/tables", exist_ok=True)
+    df = study.trials_dataframe()
+    df.to_csv("results/tables/optuna_tuning_results.csv", index=False)
+    print("Saved tuning results to results/tables/optuna_tuning_results.csv")
+
+    # Save best params
     import json
 
-    with open("best_params.json", "w") as f:
+    with open("results/tables/best_params.json", "w") as f:
         json.dump(study.best_trial.params, f, indent=4)
-    print("Saved best params to best_params.json")
+    print("Saved best params to results/tables/best_params.json")
 
 
 if __name__ == "__main__":

@@ -194,17 +194,19 @@ class Visualizer:
 
 
 @app.command()
+@app.command()
 def plot(
     model_path: str = "checkpoints/final_model.pth",
     depth: float = 10.0,
-    output_stress: str = "stress_map.png",
-    output_velocity: str = "velocity_map.png",
+    output_stress: str = "results/figs/stress_map.png",
+    output_velocity: str = "results/figs/velocity_map.png",
 ):
     try:
+        os.makedirs("results/figs", exist_ok=True)
         vis = Visualizer(model_path)
         vis.plot_stress_map(depth, output_stress)
         vis.plot_velocity_magnitude(depth, output_velocity)
-        print("Visualization complete.")
+        print(f"Visualization complete. Saved to {output_stress} and {output_velocity}")
     except Exception as e:
         print(f"Error: {e}")
 
