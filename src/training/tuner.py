@@ -43,7 +43,7 @@ class OptunaTrainer(PINNTrainer):
             print("Error: Dataset is empty.")
             return
         self.transformer = dataset.transformer
-        spatial_dim = self.model.spatial_dim
+        spatial_dim = self.raw_model.spatial_dim
 
         vel_model = None
         if spatial_dim == 3 and velocity_file:
