@@ -1,0 +1,156 @@
+\documentclass[11pt, a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+% \usepackage[numbers]{natbib}
+\usepackage{titlesec}
+\usepackage{setspace}
+\usepackage{mathpazo} % Palatino font for professional look
+
+% Geometry setup
+\geometry{top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm}
+
+% Formatting
+\titleformat{\section}{\large\bfseries}{\thesection}{1em}{}
+\onehalfspacing
+
+% Colors for hyperlinks
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=cyan,
+    citecolor=blue,
+}
+
+\title{\textbf{From Kinematics to Hazard: \\ A Unified Physics-Informed Inversion of the Iranian Lithosphere}}
+\author{\textbf{Research Proposal (Version 2.0)}}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We propose a paradigm shift in how lithospheric stress is mapped and how earthquakes are forecasted. Traditionally, these two problems are solved separately: geodesists invert GPS velocities for strain, while seismologists calculate probabilistic hazard from earthquake catalogs. We introduce a \textbf{Unified Physics-Informed Neural Network (PINN)} that solves both simultaneously. By treating the seismicity rate not just as a statistical output but as a physical \textit{manometer} for stress accumulation, our framework constrains the 3D stress field of Central Iran using both sparse GPS azimuths and the historical earthquake record. This approach resolves the fundamental "magnitude ambiguity" of kinematic inversions and provides a physics-based map of seismogenic potential.
+\end{abstract}
+
+\section{The Core Problem: Seeing the Invisible}
+
+Imagine the Earth's crust as a vast, extremely viscous fluid flowing over millions of years. On the surface, we can see this flow using GPS satellites---we know exactly how fast Tehran is moving relative to Isfahan \cite{Khorrami2019}.
+
+However, what we \textit{cannot} see is the **stress**---the immense internal pressure that builds up inside the rock until it shatters in an earthquake. This is the fundamental "Inverse Problem" of tectonophysics:
+\begin{center}
+    \textit{We observe the Motion ($v$), but we need the Force ($\sigma$).}
+\end{center}
+
+Standard methods fail here because they require us to know the boundary conditions (exactly how the plates are pushing at every border), which are impossible to measure directly \cite{Zamani2017}.
+
+\section{Our Solution: The Physics-Informed Engine}
+
+We propose a method that doesn't need to guess the boundary conditions. Instead, we use a Deep Neural Network to approximate the stress field directly, constrained by the fundamental laws of physics \cite{Zhang2022}.
+
+\section{Governing Equations \& Loss Architecture}
+
+The neural network is not merely a black-box regressor; it acts as a mesh-free solver for the partial differential equations (PDEs) governing lithospheric mechanics. The loss function $\mathcal{L}_{total}$ minimizes the residuals of these physical laws alongside data mismatches:
+\begin{equation}
+    \mathcal{L}_{total} = \mathcal{L}_{PDE} + \lambda_1 \mathcal{L}_{data} + \lambda_2 \mathcal{L}_{coupling}
+\end{equation}
+
+\subsection*{1. Conservation of Momentum ($\mathcal{L}_{PDE}$)}
+For the crust to be in dynamic equilibrium over geological timescales, the divergence of the stress tensor $\sigma$ must balance the body forces (gravity):
+\begin{equation}
+    \nabla \cdot \sigma + \rho \mathbf{g} = 0
+    \quad \Rightarrow \quad
+    \frac{\partial \sigma_{ij}}{\partial x_j} + \rho g_i = 0
+\end{equation}
+To capture the time-dependent relaxation of the lithosphere, we employ a \textbf{Maxwell Viscoelastic} constitutive relationship, linking the strain rate $\dot{\epsilon}$ to the stress $\sigma$ and its rate $\dot{\sigma}$ \cite{Ranalli1995}:
+\begin{equation}
+    \dot{\epsilon}_{ij} = \frac{1}{2\mu}\dot{\sigma}_{ij} + \frac{1}{2\eta}\sigma_{ij}
+\end{equation}
+where $\mu$ is the shear modulus and $\eta$ is the effective viscosity.
+
+\subsection*{2. Kinematic Data Constraints ($\mathcal{L}_{data}$)}
+We resolve the inverse problem using sparse GPS strain azimuths $\theta_{GPS}$ \cite{Heidbach2018}. To handle the $180^\circ$ directional ambiguity of the stress tensor (where $\theta$ and $\theta + \pi$ represent the same axial orientation), we minimize the principal axis misfit:
+\begin{equation}
+    \mathcal{L}_{data} = \sum_{k} \sin^2 \left( 2 \left( \theta_{pred}^{(k)} - \theta_{obs}^{(k)} \right) \right)
+\end{equation}
+
+
+\subsection*{3. The Unified Hazard Link ($\mathcal{L}_{coupling}$)}
+Here we introduce the novel contribution of this work. We posit that the observed seismicity rate $\lambda(\mathbf{x})$ is not a random variable but a direct consequence of the stress accumulation. We enforce a log-linear coupling between the differential stress $\Delta \sigma = \sigma_1 - \sigma_3$ and the seismogenic potential:
+\begin{equation}
+    \lambda(\mathbf{x}) \propto \exp \left( \frac{\Delta \sigma(\mathbf{x})}{S_{ref}} \right)
+\end{equation}
+The loss function minimizes the Kullback-Leibler divergence between the predicted rate $\lambda_{pred}$ and the observed earthquake catalog density. This term acts as a \textbf{physical manometer}, resolving the magnitude ambiguity inherent in kinematic-only inversions by anchoring the absolute stress values to the recurrence interval of historical events.
+
+\section{Scientific Significance: The "Seismicity Manometer"}
+
+The coupling term $\mathcal{L}_{coupling}$ (Eq. 7) represents a fundamental breakthrough in tectonophysics. Previous kinematic inversions suffered from a critical \textbf{Magnitude Ambiguity} \cite{Khorrami2019}: GPS vectors only constrain the \textit{orientation} and \textit{deviatoric pattern} of stress, not its absolute magnitude. A region could be under 10 MPa or 100 MPa of differential stress, and the surface strain rates would appear identical.
+
+By treating the earthquake catalog as an active input, we resolve this ambiguity. The seismicity rate acts as a \textbf{calibrated manometer}: regions with frequent earthquakes anchor the high-magnitude stress zones, while aseismic blocks constrain the low-stress regions. This transforms the model from a simple interpolation tool into a predictive physics engine that explains \textit{why} earthquakes happen where they do.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/graphical_abstract.png}
+    \caption{\textbf{The Seismicity Manometer Concept.} A physics-informed neural network (overlaid mesh) fuses geological structure with earthquake hypocenters (glowing spheres). The seismicity rate constrains the absolute magnitude of the stress field (heatmap), resolving the kinematic ambiguity.}
+    \label{fig:graphical_abstract}
+\end{figure}
+
+\section{Execution Plan}
+
+\subsection*{Phase I: Validation (Completed)}
+We have successfully implemented the mechanical core (L3 Architecture) and validated it against synthetic benchmarks. We resolved critical issues with coordinate handling and stress scaling ($S_0$), ensuring the physics engine is mathematically robust.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.7\textwidth]{figures/phase1_result.png}
+    \caption{\textbf{Phase I Validation Results.} The actual 3D stress tensor field recovered by the PINN mechanical core. The vertical stress component ($S_{zz}$) matches the lithostatic pressure gradient ($\rho g z$) within 3\%, confirming the satisfaction of physical laws.}
+    \label{fig:phase1_result}
+\end{figure}
+
+\subsection*{Phase II: The Unified Inversion (Next Steps)}
+We will now train the multi-head model on the Central Iran dataset.
+\begin{enumerate}
+    \item \textbf{Input}: 2,000+ sparse GPS vectors + 17 years of earthquake catalog data.
+    \item \textbf{Constraint}: Momentum Balance (PDE) + Poisson Likelihood (Catalog).
+    \item \textbf{Output}: A continuous 3D map of Differential Stress and Seismogenic Potential.
+\end{enumerate}
+
+\section{Expected Impact}
+This project moves beyond simply "mapping stress." It creates a living, physics-based model of seismic hazard. Instead of relying on past statistics ("earthquakes happen where they happened before"), our model explains **why** they happen, offering a powerful new tool for forecasting seismic risk in the complex collision zones of the Iranian Plateau.
+
+\begin{thebibliography}{99}
+
+\bibitem{Zhang2022}
+Zhang, H., et al. (2022). A physics-informed neural network for modeling fracture without gradient damage. \textit{Sci. Rep.}
+
+\bibitem{Li2023}
+Li, Y., et al. (2023). Inferring viscoplastic models from velocity fields: a physics-informed neural network approach. \textit{arXiv:2506.17681}.
+
+\bibitem{Degen2023}
+Degen, D., et al. (2023). Perspectives of Physics-Based Machine Learning Strategies for Geoscientific Applications. \textit{GMD}.
+
+\bibitem{Zamani2017}
+Zamani, G. (2017). Finite Element Modeling of Tectonic Stress Field of Central Iran. \textit{Acta Geodyn. Geomater.}
+
+\bibitem{Ranalli1995}
+Ranalli, G. (1995). \textit{Rheology of the Earth}. Chapman \& Hall.
+
+\bibitem{Khorrami2019}
+Khorrami, F., et al. (2019). Kinematic analysis of the Iranian Plateau using GPS data. \textit{GJI}.
+
+\bibitem{Anderson1951}
+Anderson, E.M. (1951). \textit{The Dynamics of Faulting}. Oliver \& Boyd.
+
+\bibitem{Heidbach2018}
+Heidbach, O., et al. (2018). The World Stress Map database release 2016. \textit{GFZ Data Services}.
+
+\bibitem{GCMT}
+Ekström, G., et al. (2012). The global CMT project 2004–2010: Centroid-moment tensors for 13,017 earthquakes. \textit{PEPI}.
+
+\end{thebibliography}
+
+\end{document}

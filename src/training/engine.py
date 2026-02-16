@@ -25,11 +25,19 @@ class PINNTrainer:
         checkpoint_dir: str = "checkpoints",
     ):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"Using device: {self.device}")
-
-        self.model = SpatialPINN(
+        self.raw_model = SpatialPINN(
             spatial_dim=spatial_dim, fourier_scale=fourier_scale
         ).to(self.device)
+
+        # Multi-GPU Support
+        self.multi_gpu = torch.cuda.device_count() > 1
+        if self.multi_gpu:
+            print(f"Detected {torch.cuda.device_count()} GPUs. Enabling DataParallel.")
+            self.model = torch.nn.DataParallel(self.raw_model)
+        else:
+            print(f"Using single device: {self.device}")
+            self.model = self.raw_model
+
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
         self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -40,7 +48,8 @@ class PINNTrainer:
         """
         Computes azimuthal co-axiality loss.
         """
-        spatial_dim = self.model.spatial_dim
+        # Get spatial_dim from raw_model (DataParallel doesn't expose it)
+        spatial_dim = self.raw_model.spatial_dim
         out_data = self.model(x_batch_in)
         sxx_d = out_data[:, 3] if spatial_dim == 3 else out_data[:, 2]
         syy_d = out_data[:, 4] if spatial_dim == 3 else out_data[:, 3]
@@ -141,7 +150,7 @@ class PINNTrainer:
         pbar = tqdm(range(epochs), desc="Training PINN")
         for epoch in pbar:
             self.model.train()
-            epoch_loss = 0.0
+            # self.optimizer.zero_grad() # Moved inside dataloader loop
 
             for x_batch, theta_batch in dataloader:
                 x_batch = x_batch.to(self.device)
@@ -171,9 +180,6 @@ class PINNTrainer:
 
                 for _ in range(num_batches):
                     # Generate mini-batch of collocation points
-                    current_n = min(
-                        batch_size_physics, n_coll
-                    )  # Approximate, simpler to just use fixed batch
                     x_coll = torch.rand(
                         batch_size_physics, spatial_dim, device=self.device
                     )
@@ -260,5 +266,11 @@ class PINNTrainer:
 
     def save_model(self, filename: str):
         path = self.checkpoint_dir / filename
-        torch.save(self.model.state_dict(), path)
+        # Always save the underlying model state_dict for cross-platform compatibility
+        state_to_save = (
+            self.model.module.state_dict()
+            if self.multi_gpu
+            else self.model.state_dict()
+        )
+        torch.save(state_to_save, path)
         print(f"Model saved to {path}")
