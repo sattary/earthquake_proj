@@ -1,9 +1,11 @@
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 import os
+import json
 import typer
 
 from src.core.model import SpatialPINN
@@ -13,12 +15,20 @@ from src.core.constants import S0, V0
 
 app = typer.Typer()
 
+# Academic Style
+sns.set_theme(style="whitegrid", context="paper")
+plt.rcParams.update(
+    {
+        "font.family": "serif",
+        "font.size": 10,
+        "axes.labelsize": 12,
+        "axes.titlesize": 14,
+        "figure.dpi": 300,
+    }
+)
+
 
 class Visualizer:
-    """
-    Handles model inference and generation of physical maps (Stress, Velocity).
-    """
-
     def __init__(
         self,
         model_path: str,
@@ -32,174 +42,128 @@ class Visualizer:
             spatial_dim=spatial_dim, fourier_scale=fourier_scale
         ).to(self.device)
 
-        # Load weights
         checkpoint = torch.load(model_path, map_location=self.device)
         self.model.load_state_dict(checkpoint)
         self.model.eval()
-        self.spatial_dim = spatial_dim
 
-        # Load Transformer from Data
         gps_files = list(Path("data/kinematic_data").glob("gps_strain_*.csv"))
-        if not gps_files:
-            raise FileNotFoundError(
-                "No GPS data found to initialize CoordinateTransformer."
-            )
-
         self.dataset = KinematicData([str(f) for f in gps_files])
         self.transformer = self.dataset.transformer
 
-        # Bounds (Physical)
-        self.min_x_m = self.transformer.min_x
-        self.max_x_m = self.transformer.max_x
-        self.min_y_m = self.transformer.min_y
-        self.max_y_m = self.transformer.max_y
-
-        # Bounds (Normalized)
         self.min_x_norm = self.dataset.coords[:, 0].min().item()
         self.max_x_norm = self.dataset.coords[:, 0].max().item()
         self.min_y_norm = self.dataset.coords[:, 1].min().item()
         self.max_y_norm = self.dataset.coords[:, 1].max().item()
 
-        # Velocity Model for Z-Bounds
-        self.z_min_km = 0.0
-        self.z_max_km = 60.0
-
+        self.z_min_km, self.z_max_km = 0.0, 30.0
         if velocity_file and spatial_dim == 3:
-            try:
-                vm = VelocityModel(velocity_file, self.transformer)
-                self.z_min_km = vm.min_dep
-                self.z_max_km = vm.max_dep
-                print(
-                    f"Loaded Velocity Model Depth Range: {self.z_min_km}-{self.z_max_km} km"
-                )
-            except Exception as e:
-                print(f"Warning: Could not load velocity model for bounds: {e}")
+            vm = VelocityModel(velocity_file, self.transformer)
+            self.z_min_km, self.z_max_km = vm.min_dep, vm.max_dep
 
     def predict_grid(self, depth_km: float, resolution: int = 100):
-        """
-        Predict stress and velocity on a horizontal grid at fixed depth.
-        """
         x = np.linspace(self.min_x_norm, self.max_x_norm, resolution)
         y = np.linspace(self.min_y_norm, self.max_y_norm, resolution)
         X, Y = np.meshgrid(x, y)
-
         z_norm = (depth_km - self.z_min_km) / (
             self.z_max_km - self.z_min_km
         ) * 2.0 - 1.0
-        Z = np.full_like(X, z_norm)
-
-        pts = np.stack([X.flatten(), Y.flatten(), Z.flatten()], axis=1)
-        pts_tensor = torch.tensor(pts, dtype=torch.float32, device=self.device)
-
+        pts = np.stack(
+            [X.flatten(), Y.flatten(), np.full_like(X.flatten(), z_norm)], axis=1
+        )
+        pts_t = torch.tensor(pts, dtype=torch.float32, device=self.device)
         with torch.no_grad():
-            out = self.model(pts_tensor)
-
-        # Unpack outputs 3D: vx, vy, vz, sxx, syy, szz, sxy, syz, sxz
-        sxx = out[:, 3].cpu().numpy() * S0
-        syy = out[:, 4].cpu().numpy() * S0
-        szz = out[:, 5].cpu().numpy() * S0
-        sxy = out[:, 6].cpu().numpy() * S0
-
+            out = self.model(pts_t)
         return (
             X,
             Y,
-            sxx.reshape(X.shape),
-            syy.reshape(X.shape),
-            szz.reshape(X.shape),
-            sxy.reshape(X.shape),
+            out[:, 3].cpu().numpy() * S0,
+            out[:, 4].cpu().numpy() * S0,
+            out[:, 5].cpu().numpy() * S0,
+            out[:, 6].cpu().numpy() * S0,
         )
 
-    def plot_stress_map(self, depth_km: float, output_path: str = "stress_map.png"):
-        X, Y, sxx, syy, szz, sxy = self.predict_grid(depth_km)
-
-        theta_T = 0.5 * np.arctan2(2 * sxy, sxx - syy)
-        theta_P = theta_T + np.pi / 2
-
-        fig, ax = plt.subplots(figsize=(10, 8))
-
-        # P-axis ticks (SHmax)
-        skip = 5
-        ax.quiver(
-            X[::skip, ::skip],
-            Y[::skip, ::skip],
-            np.cos(theta_P[::skip, ::skip]),
-            np.sin(theta_P[::skip, ::skip]),
-            headaxislength=0,
-            headlength=0,
-            pivot="middle",
-            scale=30,
-            color="red",
-            label="SHmax (Compression)",
+    def plot_stress_panel(self, depths: List[float], output_path: str):
+        fig, axes = plt.subplots(
+            1, len(depths), figsize=(6 * len(depths), 6), sharey=True
         )
-
-        pressure = -(sxx + syy + szz) / 3.0
-        c = ax.contourf(X, Y, pressure, levels=20, cmap="viridis")
-        plt.colorbar(c, label="Mean Stress (Pa)")
-
-        ax.set_title(
-            f"Predicted Stress Field at Depth {depth_km} km\nRed Lines: SHmax Direction"
-        )
-        ax.set_xlabel("Normalized X")
-        ax.set_ylabel("Normalized Y")
-        ax.legend()
-
+        for i, d in enumerate(depths):
+            X, Y, sxx, syy, szz, sxy = self.predict_grid(d)
+            pressure = -(sxx + syy + szz) / 3.0 / 1e6  # MPa
+            ax = axes[i] if len(depths) > 1 else axes
+            im = ax.contourf(X, Y, pressure.reshape(X.shape), levels=20, cmap="viridis")
+            theta = 0.5 * np.arctan2(2 * sxy, sxx - syy).reshape(X.shape) + np.pi / 2
+            skip = 10
+            ax.quiver(
+                X[::skip, ::skip],
+                Y[::skip, ::skip],
+                np.cos(theta[::skip, ::skip]),
+                np.sin(theta[::skip, ::skip]),
+                color="red",
+                headaxislength=0,
+                headlength=0,
+                pivot="middle",
+                scale=30,
+            )
+            ax.set_title(f"Depth: {d} km")
+            plt.colorbar(im, ax=ax, label="Mean Stress (MPa)")
+        plt.tight_layout()
         plt.savefig(output_path)
-        print(f"Saved stress map to {output_path}")
         plt.close()
 
-    def plot_velocity_magnitude(
-        self, depth_km: float, output_path: str = "velocity_map.png"
-    ):
-        resolution = 100
-        x = np.linspace(self.min_x_norm, self.max_x_norm, resolution)
-        y = np.linspace(self.min_y_norm, self.max_y_norm, resolution)
-        X_grid, Y_grid = np.meshgrid(x, y)
-        z_norm = (depth_km - self.z_min_km) / (
-            self.z_max_km - self.z_min_km
-        ) * 2.0 - 1.0
-        Z = np.full_like(X_grid, z_norm)
-        pts = np.stack([X_grid.flatten(), Y_grid.flatten(), Z.flatten()], axis=1)
-        pts_tensor = torch.tensor(pts, dtype=torch.float32, device=self.device)
+    def plot_vertical_profile(self, output_path: str):
+        depths = np.linspace(self.z_min_km, self.z_max_km, 50)
+        pressures = []
+        for d in depths:
+            _, _, sxx, syy, szz, _ = self.predict_grid(d, resolution=10)
+            pressures.append(-np.mean(sxx + syy + szz) / 3.0 / 1e6)
 
-        with torch.no_grad():
-            out = self.model(pts_tensor)
-
-        vx = out[:, 0].cpu().numpy() * V0
-        vy = out[:, 1].cpu().numpy() * V0
-        vz = out[:, 2].cpu().numpy() * V0
-        v_mag = np.sqrt(vx**2 + vy**2 + vz**2)
-        v_mag = v_mag.reshape(X_grid.shape)
-
-        fig, ax = plt.subplots(figsize=(10, 8))
-        c = ax.contourf(X_grid, Y_grid, v_mag, levels=20, cmap="plasma")
-        plt.colorbar(c, label="Velocity Magnitude (m/s)")
-        ax.set_title(f"Predicted Velocity Magnitude at Depth {depth_km} km")
-        ax.set_xlabel("Normalized X")
-        ax.set_ylabel("Normalized Y")
+        plt.figure(figsize=(6, 8))
+        plt.plot(pressures, depths, "b-", lw=2, label="PINN Predicted")
+        theory = [(2700 * 9.81 * d * 1000) / 1e6 for d in depths]
+        plt.plot(theory, depths, "r--", label="Lithostatic (Theory)")
+        plt.gca().invert_yaxis()
+        plt.xlabel("Mean Stress (MPa)")
+        plt.ylabel("Depth (km)")
+        plt.title("Vertical Stress Profile Convergence")
+        plt.legend()
+        plt.grid(True, alpha=0.3)
         plt.savefig(output_path)
-        print(f"Saved velocity map to {output_path}")
         plt.close()
 
 
 @app.command()
-def plot(
-    model_path: str = "checkpoints/final_model.pth",
-    depth: float = 10.0,
-    fourier_scale: float = 10.0,
-    velocity_file: Optional[str] = "data/Morteza_2023/Vel/Pwave.3D.txt",
-    output_stress: str = "results/figs/stress_map.png",
-    output_velocity: str = "results/figs/velocity_map.png",
+def plot_history(
+    history_json: str = "results/tables/training_history.json",
+    output_path: str = "results/figs/loss_history.png",
 ):
-    try:
-        os.makedirs(os.path.dirname(output_stress), exist_ok=True)
-        vis = Visualizer(
-            model_path, velocity_file=velocity_file, fourier_scale=fourier_scale
-        )
-        vis.plot_stress_map(depth, output_stress)
-        vis.plot_velocity_magnitude(depth, output_velocity)
-        print(f"Visualization complete. Saved to {output_stress} and {output_velocity}")
-    except Exception as e:
-        print(f"Error: {e}")
+    with open(history_json, "r") as f:
+        h = json.load(f)
+    plt.figure(figsize=(10, 6))
+    for k, v in h.items():
+        if len(v) > 0:
+            plt.plot(v, label=k.replace("loss_", "").upper())
+    plt.yscale("log")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss Value")
+    plt.title("PINN Multi-Component Convergence History")
+    plt.legend()
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    plt.savefig(output_path)
+    plt.close()
+
+
+@app.command()
+def results_suite(model_path: str = "checkpoints/final_model.pth"):
+    os.makedirs("results/figs", exist_ok=True)
+    vis = Visualizer(model_path)
+    print("Generating Academic Stress Panel...")
+    vis.plot_stress_panel([5.0, 15.0, 25.0], "results/figs/stress_panel_3d.png")
+    print("Generating Vertical Stress Profile...")
+    vis.plot_vertical_profile("results/figs/vertical_profile.png")
+    if os.path.exists("results/tables/training_history.json"):
+        print("Generating Loss History...")
+        plot_history()
+    print("Full Visualization Suite Complete.")
 
 
 if __name__ == "__main__":

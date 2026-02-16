@@ -208,6 +208,15 @@ class PINNTrainer:
 
         self.save_model("final_model.pth")
 
+        # Save history
+        import json
+
+        history_path = Path("results/tables/training_history.json")
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(history_path, "w") as f:
+            json.dump(self.history, f, indent=4)
+        print(f"Training history saved to {history_path}")
+
     def save_model(self, filename: str):
         path = self.checkpoint_dir / filename
         torch.save(self.model.state_dict(), path)

@@ -114,5 +114,15 @@ def plot(
     )
 
 
+@app.command()
+def results_suite(model_path: str = "checkpoints/final_model.pth"):
+    """
+    Generate the complete academic figure package (Panels, Profiles, Loss).
+    """
+    from src.pipelines.inference import results_suite as run_suite
+
+    run_suite(model_path=model_path)
+
+
 if __name__ == "__main__":
     app()
