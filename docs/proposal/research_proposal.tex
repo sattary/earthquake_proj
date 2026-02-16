@@ -54,8 +54,7 @@ A review of recent literature confirms that while components of this method exis
 
 \section{Methodology}
 
-\subsection{Physics-Informed Architecture}
-We define a deep neural network $\mathcal{N}_\theta(x,y,z,t)$ that approximates the stress tensor $\sigma_{ij}$ and velocity field $v_i$. The Loss Function $\mathcal{L}$ minimizes the residuals of the momentum balance and constitutive equations:
+We define a deep neural network $\mathcal{N}_\theta(x,y,z)$ that approximates the stress tensor $\sigma_{ij}$ and velocity field $v_i$. To address the \textit{spectral bias} inherent in deep networks (the tendency to favor low-frequency signals), we utilize \textbf{Random Fourier Features} to map spatial coordinates into a high-dimensional frequency space before processing through the MLP backbone. The Loss Function $\mathcal{L}$ minimizes the residuals of the momentum balance and constitutive equations:
 \begin{equation}
     \mathcal{L}_{total} = \mathcal{L}_{metric} + \lambda_1 \mathcal{L}_{PDE} + \lambda_2 \mathcal{L}_{BC}
 \end{equation}
@@ -68,13 +67,14 @@ where:
     \end{itemize}
 \end{itemize}
 
-\textbf{Technical Rigor:} To ensure numerical stability and physical validity, all scalar fields are solved in a \textbf{Non-Dimensionalized} framework, and spatial coordinates are projected to a local \textbf{Cartesian System (UTM Zone 39N)} to remove geodetic distortion.
+\textbf{Technical Rigor:} To ensure numerical stability, all variables are non-dimensionalized using characteristic geological scales: $S_0 = 10^8$ Pa for lithospheric stress and $V_0 = 10^{-9}$ m/s for tectonic velocity. The momentum residuals are further normalized by the gravity scale ($1/\rho g$) to prevent the body force term from dominating the loss landscape. Spatial coordinates are projected to a local \textbf{UTM Zone 39N} Cartesian system and mapped to an isotropic domain $[-1, 1]$.
 
 \subsection{Data Integration (The "Inverse" Problem)}
-We utilize the provided \texttt{kinematic\_data} (GPS strain rates) \cite{Khorrami2019}. Crucially, these data provide \textbf{orientations} (azimuths) rather than absolute stress magnitudes. We enforce this constraint by penalizing the misalignment between the predicted principal stress direction and the observed GPS strain azimuth:
+We utilize the observed GPS strain azimuths $\theta_{obs}$. Because the principal axes of stress and strain are co-axial but lack a unique direction (axial ambiguity), we employ a robust \textbf{principal axis misfit function}:
 \begin{equation}
-    \mathcal{L}_{data} = \sum_{k} (1 - \cos(\theta_{pred}^{(k)} - \theta_{obs}^{(k)}))^2
+    \mathcal{L}_{data} = \sum_{k} \sin^2(2(\theta_{pred}^{(k)} - \theta_{obs}^{(k)}))
 \end{equation}
+This formulation ensures that the network is insensitive to $180^\circ$ rotations and focuses strictly on the orientation of the stress field.
 
 \subsection{Execution Roadmap}
 \begin{enumerate}

@@ -64,10 +64,14 @@ class VelocityModel:
             rho (Tensor): Density in kg/m^3
             mu (Tensor): Shear Modulus in Pa
         """
-        # Convert to numpy for scipy interpolation
-        xn = x_norm.detach().cpu().numpy().flatten()
-        yn = y_norm.detach().cpu().numpy().flatten()
-        zn = z_norm.detach().cpu().numpy().flatten()
+        if isinstance(x_norm, torch.Tensor):
+            xn = x_norm.detach().cpu().numpy().flatten()
+            yn = y_norm.detach().cpu().numpy().flatten()
+            zn = z_norm.detach().cpu().numpy().flatten()
+        else:
+            xn = x_norm.flatten()
+            yn = y_norm.flatten()
+            zn = z_norm.flatten()
 
         # Query Vp
         vp = self.vp_interp(np.stack([xn, yn, zn], axis=1))  # km/s
@@ -91,9 +95,11 @@ class VelocityModel:
 
         mu = rho * (vs_m**2)
 
-        return torch.tensor(rho, dtype=torch.float32), torch.tensor(
-            mu, dtype=torch.float32
-        )
+        return {
+            "vp": torch.tensor(vp, dtype=torch.float32),
+            "rho": torch.tensor(rho, dtype=torch.float32),
+            "mu": torch.tensor(mu, dtype=torch.float32),
+        }
 
     def normalize_z(self, depth_km):
         # Helper to convert physical depth to normalized z

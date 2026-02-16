@@ -66,9 +66,10 @@ class PINNTrainer:
 
         if vel_model is not None:
             scale_z = (vel_model.max_dep - vel_model.min_dep) * 1000.0 / 2.0
-            rho_t, mu_t = vel_model.get_material_properties(
+            props = vel_model.get_material_properties(
                 x_coll[:, 0], x_coll[:, 1], x_coll[:, 2]
             )
+            rho_t, mu_t = props["rho"], props["mu"]
             rho = rho_t.to(self.device).view(-1, 1)
             mu = mu_t.to(self.device).view(-1, 1)
             eta_val = mu * 3.1536e11
