@@ -176,12 +176,6 @@ class PINNTrainer:
                     )
                     loss_const = torch.mean(res_c_xx**2 + res_c_yy**2 + res_c_xy**2)
                     loss_bc = torch.tensor(0.0, device=self.device)
-                if spatial_dim == 3:
-                    Z_norm = torch.linspace(-1, 1, n_coll).to(self.device).view(-1, 1)
-                    # Sample Lat/Lon from dataset to get UTM range
-                    lats = self.dataset.data["latitude"].values
-                    lons = self.dataset.data["longitude"].values
-                    coords_norm = self.dataset.coords
 
                 loss = (
                     w_data * loss_data
