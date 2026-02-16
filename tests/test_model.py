@@ -1,6 +1,6 @@
 import torch
 import pytest
-from src.pinn.model import SpatialPINN
+from src.core.model import SpatialPINN
 
 
 def test_spatial_pinn_2d_shape():

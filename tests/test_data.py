@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import pytest
-from src.pinn.utils import CoordinateTransformer
+from src.data.transformers import CoordinateTransformer
 
 
 def test_coordinate_transformer_reversibility():

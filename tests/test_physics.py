@@ -1,7 +1,7 @@
 import torch
 import pytest
-from src.pinn.physics import Physics
-from src.pinn.model import SpatialPINN
+from src.core.physics import Physics
+from src.core.model import SpatialPINN
 
 
 def test_momentum_balance_constant_field():
@@ -19,7 +19,9 @@ def test_momentum_balance_constant_field():
 
     x = torch.tensor([[0.0, 0.0, 0.0]], requires_grad=True)
 
-    rx, ry, rz = Physics.momentum_balance_3d(model, x, rho=2700.0, g=9.81, S0=1e8)
+    rx, ry, rz = Physics.momentum_balance_3d(
+        model, x, rho=2700.0, g=9.81, stress_scale=1e8
+    )
 
     # Static case (all derivatives 0):
     # res_z = (div_z + rho*g) / (rho*g) = (0 + 26487) / 26487 = 1.0
@@ -44,7 +46,7 @@ def test_constitutive_zero_velocity():
     # If we set weights to 0, derivatives of velocity are 0.
 
     r_xx, r_yy, r_zz, r_xy, r_yz, r_xz, r_vol = Physics.constitutive_3d(
-        model, x, eta=1e21, S0=1e8, V0=1e-9
+        model, x, eta=1e21, stress_scale=1e8, vel_scale=1e-9
     )
 
     assert torch.allclose(r_xx, torch.tensor(0.0))
@@ -59,7 +61,7 @@ def test_traction_free_surface():
             p.fill_(0)  # Biases=0 -> stress=0
 
     x_surf = torch.tensor([[0.5, 0.5, -1.0]])
-    rxz, ryz, rzz = Physics.traction_free_surface(model, x_surf, S0=1e8)
+    rxz, ryz, rzz = Physics.traction_free_surface(model, x_surf, stress_scale=1e8)
 
     assert torch.allclose(rxz, torch.tensor(0.0))
     assert torch.allclose(ryz, torch.tensor(0.0))
