@@ -28,11 +28,12 @@ class OptunaTrainer(PINNTrainer):
         velocity_file: Optional[str] = None,
     ) -> float:
         # Suggest Hyperparameters
-        lr = trial.suggest_float("lr", 1e-5, 1e-2, log=True)
-        w_pde = trial.suggest_float("w_pde", 1e-5, 1.0, log=True)
-        w_const = trial.suggest_float("w_const", 1e-5, 1.0, log=True)
-        w_bc = trial.suggest_float("w_bc", 1e-3, 100.0, log=True)
-        w_data = 1.0
+        # Suggest Hyperparameters (Restoration: Prioritize Physics & Low-Freq)
+        lr = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
+        w_pde = trial.suggest_float("w_pde", 0.1, 10.0, log=True)
+        w_const = trial.suggest_float("w_const", 0.1, 10.0, log=True)
+        w_bc = trial.suggest_float("w_bc", 0.1, 10.0, log=True)
+        w_data = 5.0  # Increased fixed data weight for stability
 
         # Suggested Params
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
@@ -128,10 +129,11 @@ def run_tuning(
         return
 
     def objective(trial):
-        f_scale = trial.suggest_float("f_tune", 1.0, 50.0)
+        # Constrain Fourier Scale to prevent Checkerboarding
+        f_scale = trial.suggest_float("f_tune", 0.5, 3.0)
         trainer = OptunaTrainer(spatial_dim=spatial_dim, fourier_scale=f_scale)
         return trainer.train_optuna(
-            trial, gps_files, epochs=epochs, n_coll=1000, velocity_file=velocity_file
+            trial, gps_files, epochs=epochs, n_coll=5000, velocity_file=velocity_file
         )
 
     study = optuna.create_study(direction="minimize")
