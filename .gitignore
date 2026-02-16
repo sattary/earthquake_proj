@@ -10,8 +10,6 @@ wheels/
 .venv
 
 # data
-data/*.tar.gz
-*.pdf
 papers/
 docs/md
 
