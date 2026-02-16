@@ -1,15 +1,15 @@
 import typer
-from typing import List, Optional
-from .trainer import PINNTrainer
+import glob
+import os
+import json
+from typing import Optional
 
-app = typer.Typer(help="Earthquake PINN CLI managed by Typer")
+from src.training.engine import PINNTrainer
+from src.training.tuner import run_tuning
+from src.pipelines.eda import audit as run_audit
+from src.pipelines.inference import plot as run_plot
 
-
-@app.callback()
-def callback():
-    """
-    Earthquake PINN CLI.
-    """
+app = typer.Typer(help="L3 Earthquake PINN Operational Pipeline")
 
 
 @app.command()
@@ -21,54 +21,35 @@ def train(
     w_pde: float = typer.Option(1e-4, help="Weight for PDE Loss"),
     w_const: float = typer.Option(1e-4, help="Weight for Constitutive Law Loss"),
     w_bc: float = typer.Option(1e-4, help="Weight for Boundary Condition Loss"),
-    fourier_scale: float = typer.Option(10.0, help="Fourier Feature scale (frequency)"),
-    gpu: bool = typer.Option(True, help="Use GPU if available"),
-    spatial_dim: int = typer.Option(2, help="Spatial Dimension (2 or 3)"),
+    fourier_scale: float = typer.Option(10.0, help="Fourier Feature scale"),
+    spatial_dim: int = typer.Option(3, help="Spatial Dimension (2 or 3)"),
     velocity_file: Optional[str] = typer.Option(
-        None, help="Path to Pwave.3D.txt (required for 3D)"
+        "data/Morteza_2023/Vel/Pwave.3D.txt", help="Path to Velocity Model"
     ),
     config: Optional[str] = typer.Option(None, help="Path to best_params.json"),
 ):
     """
-    Train the PINN model on sparse GPS data.
+    Train the PINN model using the modular core engine.
     """
-    # Load Config if provided
-    import json
-
     if config:
         with open(config, "r") as f:
             params = json.load(f)
-            typer.echo(f"Loading config from {config}: {params}")
-            # Override defaults with config
+            print(f"Loading config from {config}")
             lr = params.get("lr", lr)
-            w_data = params.get("w_data", w_data)
             w_pde = params.get("w_pde", w_pde)
             w_const = params.get("w_const", w_const)
             w_bc = params.get("w_bc", w_bc)
             fourier_scale = params.get("fourier_scale", fourier_scale)
 
     trainer = PINNTrainer(spatial_dim=spatial_dim, lr=lr, fourier_scale=fourier_scale)
-
-    # Files
-    # Files - Dynamic Glob
-    import glob
-
     gps_files = glob.glob("data/kinematic_data/gps_strain_*.csv")
 
-    # Filter existing
-    import os
-
-    valid_files = [f for f in gps_files if os.path.exists(f)]
-
-    if not valid_files:
-        typer.echo("No GPS files found! Please check data/kinematic_data/")
+    if not gps_files:
+        print("Error: No GPS files found.")
         raise typer.Exit(code=1)
 
-    typer.echo(
-        f"Starting training on {len(valid_files)} GPS files (Dim={spatial_dim})..."
-    )
     trainer.train(
-        valid_files,
+        gps_files,
         epochs=epochs,
         n_coll=n_coll,
         w_data=w_data,
@@ -77,7 +58,6 @@ def train(
         w_bc=w_bc,
         velocity_file=velocity_file,
     )
-    typer.echo("Training complete.")
 
 
 @app.command()
@@ -85,18 +65,52 @@ def tune(
     trials: int = typer.Option(20, help="Number of Optuna trials"),
     epochs: int = typer.Option(200, help="Epochs per trial"),
     spatial_dim: int = typer.Option(3, help="Spatial Dimension"),
-    velocity_file: Optional[str] = typer.Option(None, help="Path to Velocity Model"),
+    velocity_file: Optional[str] = typer.Option(
+        "data/Morteza_2023/Vel/Pwave.3D.txt", help="Path to Velocity Model"
+    ),
 ):
     """
-    Run Hyperparameter Tuning with Optuna.
+    Run Hyperparameter Tuning.
     """
-    from src.pinn.tune import run_tuning
-
     run_tuning(
         n_trials=trials,
         epochs=epochs,
         spatial_dim=spatial_dim,
         velocity_file=velocity_file,
+    )
+
+
+@app.command()
+def audit(
+    gps_dir: str = "data/kinematic_data",
+    velocity_file: str = "data/Morteza_2023/Vel/Pwave.3D.txt",
+    output_dir: str = "results/eda",
+):
+    """
+    Perform Exploratory Data Analysis (EDA).
+    """
+    run_audit(gps_dir=gps_dir, velocity_file=velocity_file, output_dir=output_dir)
+
+
+@app.command()
+def plot(
+    model_path: str = "checkpoints/final_model.pth",
+    depth: float = 10.0,
+    fourier_scale: float = 10.0,
+    velocity_file: Optional[str] = "data/Morteza_2023/Vel/Pwave.3D.txt",
+    output_stress: str = "results/figs/stress_map.png",
+    output_velocity: str = "results/figs/velocity_map.png",
+):
+    """
+    Generate physical maps from a trained model.
+    """
+    run_plot(
+        model_path=model_path,
+        depth=depth,
+        fourier_scale=fourier_scale,
+        velocity_file=velocity_file,
+        output_stress=output_stress,
+        output_velocity=output_velocity,
     )
 
 

@@ -1,18 +1,20 @@
 import torch
 import torch.optim as optim
-import os
 from pathlib import Path
 from typing import List, Optional
 from tqdm import tqdm
-from src.pinn.model import SpatialPINN
-from src.pinn.data import KinematicData
-from src.pinn.physics import Physics
-from src.pinn.velocity_model import VelocityModel
+
+from src.core.model import SpatialPINN
+from src.core.physics import Physics
+from src.core.constants import S0, V0
+from src.data.loaders import KinematicData
+from src.data.velocity import VelocityModel
 
 
 class PINNTrainer:
     """
     Trainer class for the Physics-Informed Neural Network.
+    Encapsulates life-cycle of training, loss computation, and checkpointing.
     """
 
     def __init__(
@@ -56,7 +58,7 @@ class PINNTrainer:
 
     def compute_physics_losses_3d(self, x_coll, x_surf, vel_model):
         """
-        Computes 3D physics residuals.
+        Computes 3D physics residuals using the Core Physics engine.
         """
         rho = 2700.0
         mu = 30e9
@@ -81,18 +83,26 @@ class PINNTrainer:
             g=9.81,
             scale_x=scale_x,
             scale_z=scale_z,
-            S0=1e8,
+            stress_scale=S0,
         )
         loss_pde = torch.mean(res_x**2 + res_y**2 + res_z**2)
 
         r_xx, r_yy, r_zz, r_xy, r_yz, r_xz, r_vol = Physics.constitutive_3d(
-            self.model, x_coll, eta=eta_val, scale_x=scale_x, scale_z=scale_z, S0=1e8
+            self.model,
+            x_coll,
+            eta=eta_val,
+            scale_x=scale_x,
+            scale_z=scale_z,
+            stress_scale=S0,
+            vel_scale=V0,
         )
         loss_const = torch.mean(
             r_xx**2 + r_yy**2 + r_zz**2 + r_xy**2 + r_yz**2 + r_xz**2 + r_vol**2
         )
 
-        rxz, ryz, rzz = Physics.traction_free_surface(self.model, x_surf, S0=1e8)
+        rxz, ryz, rzz = Physics.traction_free_surface(
+            self.model, x_surf, stress_scale=S0
+        )
         loss_bc = torch.mean(rxz**2 + ryz**2 + rzz**2)
 
         return loss_pde, loss_const, loss_bc

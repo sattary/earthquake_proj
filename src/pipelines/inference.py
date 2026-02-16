@@ -5,14 +5,20 @@ from pathlib import Path
 from typing import Optional
 import os
 import typer
-from src.pinn.model import SpatialPINN
-from src.pinn.velocity_model import VelocityModel
-from src.pinn.data import KinematicData
+
+from src.core.model import SpatialPINN
+from src.data.velocity import VelocityModel
+from src.data.loaders import KinematicData
+from src.core.constants import S0, V0
 
 app = typer.Typer()
 
 
 class Visualizer:
+    """
+    Handles model inference and generation of physical maps (Stress, Velocity).
+    """
+
     def __init__(
         self,
         model_path: str,
@@ -25,14 +31,14 @@ class Visualizer:
         self.model = SpatialPINN(
             spatial_dim=spatial_dim, fourier_scale=fourier_scale
         ).to(self.device)
+
         # Load weights
         checkpoint = torch.load(model_path, map_location=self.device)
         self.model.load_state_dict(checkpoint)
         self.model.eval()
         self.spatial_dim = spatial_dim
 
-        # Load Transformer from Data (to get bounds/scaling)
-        # Hack: Initialize a dummy KinematicData to get the transformer
+        # Load Transformer from Data
         gps_files = list(Path("data/kinematic_data").glob("gps_strain_*.csv"))
         if not gps_files:
             raise FileNotFoundError(
@@ -56,12 +62,10 @@ class Visualizer:
 
         # Velocity Model for Z-Bounds
         self.z_min_km = 0.0
-        self.z_max_km = 60.0  # Default fallback
+        self.z_max_km = 60.0
 
         if velocity_file and spatial_dim == 3:
             try:
-                # We need the transformer to init VelocityModel. We have it.
-                # VelocityModel constructor reads the file.
                 vm = VelocityModel(velocity_file, self.transformer)
                 self.z_min_km = vm.min_dep
                 self.z_max_km = vm.max_dep
@@ -70,41 +74,31 @@ class Visualizer:
                 )
             except Exception as e:
                 print(f"Warning: Could not load velocity model for bounds: {e}")
-                print("Using default depth range 0-60km.")
 
     def predict_grid(self, depth_km: float, resolution: int = 100):
         """
         Predict stress and velocity on a horizontal grid at fixed depth.
         """
-        # Create Grid
         x = np.linspace(self.min_x_norm, self.max_x_norm, resolution)
         y = np.linspace(self.min_y_norm, self.max_y_norm, resolution)
         X, Y = np.meshgrid(x, y)
 
-        # Z coordinate (Normalized)
-        # Use detected bounds
         z_norm = (depth_km - self.z_min_km) / (
             self.z_max_km - self.z_min_km
         ) * 2.0 - 1.0
-
         Z = np.full_like(X, z_norm)
 
-        # Flatten
         pts = np.stack([X.flatten(), Y.flatten(), Z.flatten()], axis=1)
         pts_tensor = torch.tensor(pts, dtype=torch.float32, device=self.device)
 
         with torch.no_grad():
             out = self.model(pts_tensor)
 
-        # Unpack outputs
-        # 3D: vx, vy, vz, sxx, syy, szz, sxy, syz, sxz
-        S0 = 1e7  # Pa
+        # Unpack outputs 3D: vx, vy, vz, sxx, syy, szz, sxy, syz, sxz
         sxx = out[:, 3].cpu().numpy() * S0
         syy = out[:, 4].cpu().numpy() * S0
         szz = out[:, 5].cpu().numpy() * S0
         sxy = out[:, 6].cpu().numpy() * S0
-        syz = out[:, 7].cpu().numpy() * S0
-        sxz = out[:, 8].cpu().numpy() * S0
 
         return (
             X,
@@ -118,14 +112,12 @@ class Visualizer:
     def plot_stress_map(self, depth_km: float, output_path: str = "stress_map.png"):
         X, Y, sxx, syy, szz, sxy = self.predict_grid(depth_km)
 
-        # Calculate Max Horizontal Stress Direction (SHmax)
         theta_T = 0.5 * np.arctan2(2 * sxy, sxx - syy)
         theta_P = theta_T + np.pi / 2
 
-        # Plot
         fig, ax = plt.subplots(figsize=(10, 8))
 
-        # P-axis ticks (Compression direction)
+        # P-axis ticks (SHmax)
         skip = 5
         ax.quiver(
             X[::skip, ::skip],
@@ -140,8 +132,7 @@ class Visualizer:
             label="SHmax (Compression)",
         )
 
-        # Background: Mean Stress (Pressure)
-        pressure = -(sxx + syy + szz) / 3.0  # Positive = Compression
+        pressure = -(sxx + syy + szz) / 3.0
         c = ax.contourf(X, Y, pressure, levels=20, cmap="viridis")
         plt.colorbar(c, label="Mean Stress (Pa)")
 
@@ -159,12 +150,6 @@ class Visualizer:
     def plot_velocity_magnitude(
         self, depth_km: float, output_path: str = "velocity_map.png"
     ):
-        """
-        Plot Velocity Magnitude |v| at fixed depth.
-        """
-        X, Y, sxx, syy, szz, sxy = self.predict_grid(depth_km)
-
-        # We need to get V from model. Re-using grid generation logic.
         resolution = 100
         x = np.linspace(self.min_x_norm, self.max_x_norm, resolution)
         y = np.linspace(self.min_y_norm, self.max_y_norm, resolution)
@@ -179,7 +164,6 @@ class Visualizer:
         with torch.no_grad():
             out = self.model(pts_tensor)
 
-        V0 = 1e-9  # m/s
         vx = out[:, 0].cpu().numpy() * V0
         vy = out[:, 1].cpu().numpy() * V0
         vz = out[:, 2].cpu().numpy() * V0
@@ -207,7 +191,7 @@ def plot(
     output_velocity: str = "results/figs/velocity_map.png",
 ):
     try:
-        os.makedirs("results/figs", exist_ok=True)
+        os.makedirs(os.path.dirname(output_stress), exist_ok=True)
         vis = Visualizer(
             model_path, velocity_file=velocity_file, fourier_scale=fourier_scale
         )

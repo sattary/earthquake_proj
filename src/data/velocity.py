@@ -2,7 +2,7 @@ import numpy as np
 import scipy.interpolate
 import torch
 import pandas as pd
-from src.pinn.utils import CoordinateTransformer
+from src.data.transformers import CoordinateTransformer
 
 
 class VelocityModel:
@@ -76,17 +76,10 @@ class VelocityModel:
         # Query Vp
         vp = self.vp_interp(np.stack([xn, yn, zn], axis=1))  # km/s
 
-        # Empirical Relations
-        # Brocher (2005) or Birch's Law for density
-        # rho = 1.6612 * Vp - 0.4721 * Vp**2 + 0.0671 * Vp**3 - 0.0043 * Vp**4 + 0.000106 * Vp**5
-        # Simplified Birch: rho = 0.32 * Vp + 0.77 (Vp in km/s, rho in g/cm3)
-        # Let's use simple scaling for stability: rho ~ 2700
-
         # Vp is km/s -> m/s = Vp * 1000
         vp_m = vp * 1000.0
 
-        # Naive Density: 2700 kg/m^3 baseline, scaled slightly by Vp
-        # rho = 2700 + (vp - 6.0)*300
+        # Naive Density: 2500 kg/m^3 baseline, scaled slightly by Vp
         rho = 2500.0 + (vp - 5.0) * 200.0
 
         # Shear Modulus mu = rho * Vs^2

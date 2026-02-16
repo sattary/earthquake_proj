@@ -4,10 +4,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
 import typer
-from typing import List, Optional
-import os
-from src.pinn.data import KinematicData
-from src.pinn.velocity_model import VelocityModel
+
+from src.data.loaders import KinematicData
+from src.data.velocity import VelocityModel
 
 app = typer.Typer()
 
@@ -73,11 +72,6 @@ def plot_azimuth_rose(dataset: KinematicData, output_dir: Path):
     """
     Generate a Rose Diagram of GPS strain azimuths.
     """
-    # math_az is pi/2 - gps_az
-    # We want to plot the original GPS azimuths (CW from North) for geologists
-    # We'll extract them from the raw files or back-calculate
-
-    # For simplicity, we'll back-calculate from math_az to show the geological trend
     math_az = dataset.azimuths_rad
     gps_az_deg = np.degrees(np.pi / 2 - math_az) % 360
 
@@ -126,8 +120,7 @@ def plot_velocity_slices(vm: VelocityModel, output_dir: Path):
 
     for i, depth in enumerate(depths):
         # Sample Material Properties
-        Z = np.full_like(X, depth)  # VM uses km for depth sampling?
-        # Actually our VM get_material_properties takes normalized X, Y and Depth in KM
+        Z = np.full_like(X, depth)
         props = vm.get_material_properties(X.flatten(), Y.flatten(), Z.flatten())
         Vp = props["vp"].cpu().numpy().reshape(X.shape)
 

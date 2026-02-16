@@ -2,12 +2,14 @@ import optuna
 import typer
 from typing import List, Optional
 import os
-from src.pinn.trainer import PINNTrainer
 import torch
 import glob
-from src.pinn.data import KinematicData
-from src.pinn.physics import Physics
-from src.pinn.velocity_model import VelocityModel
+import json
+
+from src.training.engine import PINNTrainer
+from src.core.physics import Physics
+from src.data.loaders import KinematicData
+from src.data.velocity import VelocityModel
 
 app = typer.Typer()
 
@@ -126,7 +128,6 @@ def run_tuning(
         return
 
     def objective(trial):
-        # fourier_scale needs to be set at init
         f_scale = trial.suggest_float("f_tune", 1.0, 50.0)
         trainer = OptunaTrainer(spatial_dim=spatial_dim, fourier_scale=f_scale)
         return trainer.train_optuna(
@@ -145,8 +146,6 @@ def run_tuning(
     )
 
     with open("results/tables/best_params.json", "w") as f:
-        import json
-
         json.dump(study.best_trial.params, f, indent=4)
     print("Saved best params to results/tables/best_params.json")
 
