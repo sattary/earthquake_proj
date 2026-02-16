@@ -14,14 +14,14 @@ app = typer.Typer(help="L3 Earthquake PINN Operational Pipeline")
 
 @app.command()
 def train(
-    epochs: int = typer.Option(1000, help="Number of training epochs"),
+    epochs: int = typer.Option(20000, help="Number of training epochs"),
     lr: float = typer.Option(1e-3, help="Learning rate"),
-    n_coll: int = typer.Option(1000, help="Number of physics collocation points"),
-    w_data: float = typer.Option(1.0, help="Weight for Data Loss"),
-    w_pde: float = typer.Option(1e-4, help="Weight for PDE Loss"),
-    w_const: float = typer.Option(1e-4, help="Weight for Constitutive Law Loss"),
-    w_bc: float = typer.Option(1e-4, help="Weight for Boundary Condition Loss"),
-    fourier_scale: float = typer.Option(10.0, help="Fourier Feature scale"),
+    n_coll: int = typer.Option(20000, help="Number of physics collocation points"),
+    w_data: float = typer.Option(5.0, help="Weight for Data Loss"),
+    w_pde: float = typer.Option(1.0, help="Weight for PDE Loss"),
+    w_const: float = typer.Option(1.0, help="Weight for Constitutive Law Loss"),
+    w_bc: float = typer.Option(1.0, help="Weight for Boundary Condition Loss"),
+    fourier_scale: float = typer.Option(1.0, help="Fourier Feature scale"),
     spatial_dim: int = typer.Option(3, help="Spatial Dimension (2 or 3)"),
     velocity_file: Optional[str] = typer.Option(
         "data/Morteza_2023/Vel/Pwave.3D.txt", help="Path to Velocity Model"

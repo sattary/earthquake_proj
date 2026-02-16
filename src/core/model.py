@@ -37,7 +37,7 @@ class SpatialPINN(nn.Module):
     """
 
     def __init__(
-        self, spatial_dim=2, hidden_layers=[64, 64, 64, 64], fourier_scale=10.0
+        self, spatial_dim=2, hidden_layers=[128, 128, 128, 128], fourier_scale=1.0
     ):
         super().__init__()
 

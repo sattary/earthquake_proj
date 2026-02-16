@@ -110,12 +110,12 @@ class PINNTrainer:
     def train(
         self,
         gps_files: List[str],
-        epochs: int = 1000,
-        n_coll: int = 1000,
-        w_data: float = 1.0,
-        w_pde: float = 0.1,
-        w_const: float = 0.1,
-        w_bc: float = 0.1,
+        epochs: int = 20000,
+        n_coll: int = 20000,
+        w_data: float = 5.0,
+        w_pde: float = 1.0,
+        w_const: float = 1.0,
+        w_bc: float = 1.0,
         velocity_file: Optional[str] = None,
     ):
         dataset = KinematicData(gps_files)
