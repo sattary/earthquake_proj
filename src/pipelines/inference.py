@@ -143,6 +143,25 @@ class Visualizer:
         save_academic_fig(plt.gcf(), output_path)
         plt.close()
 
+    def plot_slice(self, depth: float, output_path: str, field: str = "stress"):
+        X, Y, sxx, syy, szz, sxy = self.predict_grid(depth)
+        fig, ax = plt.subplots(figsize=(8, 6))
+
+        if field == "stress":
+            data = -(sxx + syy + szz) / 3.0 / 1e6  # Mean stress MPa
+            im = ax.contourf(X, Y, data.reshape(X.shape), levels=20, cmap="viridis")
+            plt.colorbar(im, label="Mean Stress (MPa)")
+            ax.set_title(f"Mean Stress at {depth}km")
+        else:
+            # Velocity map placeholder - using V0 constant
+            data = np.sqrt(sxx**2 + syy**2) * V0 / 1e3  # km/s placeholder
+            im = ax.contourf(X, Y, data.reshape(X.shape), levels=20, cmap="plasma")
+            plt.colorbar(im, label="Velocity Field Magnitude (km/s)")
+            ax.set_title(f"{field.capitalize()} field at {depth}km")
+
+        save_academic_fig(fig, output_path)
+        plt.close()
+
 
 @app.command()
 def plot_history(
@@ -163,6 +182,26 @@ def plot_history(
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     save_academic_fig(plt.gcf(), output_path)
     plt.close()
+
+
+def run_plotting(
+    model_path,
+    depth,
+    fourier_scale,
+    velocity_file,
+    output_stress,
+    output_velocity,
+):
+    vis = Visualizer(
+        model_path=model_path,
+        velocity_file=velocity_file,
+        spatial_dim=3,
+        fourier_scale=fourier_scale,
+    )
+    print(f"Generating Stress Map at depth {depth}km...")
+    vis.plot_slice(depth=depth, output_path=output_stress, field="stress")
+    print(f"Generating Velocity Map at depth {depth}km...")
+    vis.plot_slice(depth=depth, output_path=output_velocity, field="velocity")
 
 
 @app.command()
