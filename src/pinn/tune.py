@@ -32,7 +32,7 @@ class OptunaTrainer(PINNTrainer):
         w_bc = trial.suggest_float("w_bc", 1e-3, 100.0, log=True)
         w_data = 1.0
 
-        # Re-initialize optimizer
+        # Suggested Params
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
 
         dataset = KinematicData(gps_files)
@@ -126,7 +126,9 @@ def run_tuning(
         return
 
     def objective(trial):
-        trainer = OptunaTrainer(spatial_dim=spatial_dim)
+        # fourier_scale needs to be set at init
+        f_scale = trial.suggest_float("f_tune", 1.0, 50.0)
+        trainer = OptunaTrainer(spatial_dim=spatial_dim, fourier_scale=f_scale)
         return trainer.train_optuna(
             trial, gps_files, epochs=epochs, n_coll=1000, velocity_file=velocity_file
         )

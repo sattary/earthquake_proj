@@ -21,6 +21,7 @@ def train(
     w_pde: float = typer.Option(1e-4, help="Weight for PDE Loss"),
     w_const: float = typer.Option(1e-4, help="Weight for Constitutive Law Loss"),
     w_bc: float = typer.Option(1e-4, help="Weight for Boundary Condition Loss"),
+    fourier_scale: float = typer.Option(10.0, help="Fourier Feature scale (frequency)"),
     gpu: bool = typer.Option(True, help="Use GPU if available"),
     spatial_dim: int = typer.Option(2, help="Spatial Dimension (2 or 3)"),
     velocity_file: Optional[str] = typer.Option(
@@ -44,8 +45,9 @@ def train(
             w_pde = params.get("w_pde", w_pde)
             w_const = params.get("w_const", w_const)
             w_bc = params.get("w_bc", w_bc)
+            fourier_scale = params.get("fourier_scale", fourier_scale)
 
-    trainer = PINNTrainer(spatial_dim=spatial_dim, lr=lr)
+    trainer = PINNTrainer(spatial_dim=spatial_dim, lr=lr, fourier_scale=fourier_scale)
 
     # Files
     # Files - Dynamic Glob

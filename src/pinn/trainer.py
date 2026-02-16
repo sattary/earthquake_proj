@@ -19,12 +19,15 @@ class PINNTrainer:
         self,
         spatial_dim: int = 2,
         lr: float = 1e-3,
+        fourier_scale: float = 10.0,
         checkpoint_dir: str = "checkpoints",
     ):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {self.device}")
 
-        self.model = SpatialPINN(spatial_dim=spatial_dim).to(self.device)
+        self.model = SpatialPINN(
+            spatial_dim=spatial_dim, fourier_scale=fourier_scale
+        ).to(self.device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
         self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)

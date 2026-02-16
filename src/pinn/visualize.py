@@ -18,10 +18,13 @@ class Visualizer:
         model_path: str,
         velocity_file: Optional[str] = None,
         spatial_dim: int = 3,
+        fourier_scale: float = 10.0,
         device: str = "cpu",
     ):
         self.device = torch.device(device)
-        self.model = SpatialPINN(spatial_dim=spatial_dim).to(self.device)
+        self.model = SpatialPINN(
+            spatial_dim=spatial_dim, fourier_scale=fourier_scale
+        ).to(self.device)
         # Load weights
         checkpoint = torch.load(model_path, map_location=self.device)
         self.model.load_state_dict(checkpoint)
@@ -198,13 +201,16 @@ class Visualizer:
 def plot(
     model_path: str = "checkpoints/final_model.pth",
     depth: float = 10.0,
+    fourier_scale: float = 10.0,
     velocity_file: Optional[str] = "data/Morteza_2023/Vel/Pwave.3D.txt",
     output_stress: str = "results/figs/stress_map.png",
     output_velocity: str = "results/figs/velocity_map.png",
 ):
     try:
         os.makedirs("results/figs", exist_ok=True)
-        vis = Visualizer(model_path, velocity_file=velocity_file)
+        vis = Visualizer(
+            model_path, velocity_file=velocity_file, fourier_scale=fourier_scale
+        )
         vis.plot_stress_map(depth, output_stress)
         vis.plot_velocity_magnitude(depth, output_velocity)
         print(f"Visualization complete. Saved to {output_stress} and {output_velocity}")
