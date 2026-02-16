@@ -28,6 +28,19 @@ plt.rcParams.update(
 )
 
 
+def save_academic_fig(fig, base_path: str):
+    """Saves a figure in PDF (vector), SVG (vector), and high-res 600dpi PNG."""
+    p = Path(base_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+
+    # Vector formats
+    fig.savefig(p.with_suffix(".pdf"), bbox_inches="tight", transparent=False)
+    fig.savefig(p.with_suffix(".svg"), bbox_inches="tight", transparent=False)
+    # High-res raster
+    fig.savefig(p.with_suffix(".png"), bbox_inches="tight", dpi=600, transparent=False)
+    print(f"Exported academic figure set: {p.stem}.{{pdf,svg,png}} to {p.parent}")
+
+
 class Visualizer:
     def __init__(
         self,
@@ -107,7 +120,7 @@ class Visualizer:
             ax.set_title(f"Depth: {d} km")
             plt.colorbar(im, ax=ax, label="Mean Stress (MPa)")
         plt.tight_layout()
-        plt.savefig(output_path)
+        save_academic_fig(fig, output_path)
         plt.close()
 
     def plot_vertical_profile(self, output_path: str):
@@ -127,7 +140,7 @@ class Visualizer:
         plt.title("Vertical Stress Profile Convergence")
         plt.legend()
         plt.grid(True, alpha=0.3)
-        plt.savefig(output_path)
+        save_academic_fig(plt.gcf(), output_path)
         plt.close()
 
 
@@ -148,7 +161,7 @@ def plot_history(
     plt.title("PINN Multi-Component Convergence History")
     plt.legend()
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    plt.savefig(output_path)
+    save_academic_fig(plt.gcf(), output_path)
     plt.close()
 
 
