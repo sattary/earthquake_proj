@@ -5,7 +5,7 @@ import seaborn as sns
 from pathlib import Path
 import typer
 
-from src.data.loaders import KinematicData
+from src.data.loaders import GPSDataset
 from src.data.velocity import VelocityModel
 
 app = typer.Typer()
@@ -23,7 +23,7 @@ plt.rcParams.update(
 )
 
 
-def plot_station_density(dataset: KinematicData, output_dir: Path):
+def plot_station_density(dataset: GPSDataset, output_dir: Path):
     """
     Visualize spatial distribution and density of GPS stations.
     """
@@ -68,7 +68,7 @@ def plot_station_density(dataset: KinematicData, output_dir: Path):
     plt.close()
 
 
-def plot_azimuth_rose(dataset: KinematicData, output_dir: Path):
+def plot_azimuth_rose(dataset: GPSDataset, output_dir: Path):
     """
     Generate a Rose Diagram of GPS strain azimuths.
     """
@@ -157,7 +157,7 @@ def audit(
         return
 
     print(f"Loading {len(gps_files)} GPS files...")
-    dataset = KinematicData([str(f) for f in gps_files])
+    dataset = GPSDataset([str(f) for f in gps_files])
 
     # 2. Load Velocity Model
     print(f"Loading Velocity Model: {velocity_file}")

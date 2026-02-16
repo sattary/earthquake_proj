@@ -10,7 +10,7 @@ import typer
 
 from src.core.model import SpatialPINN
 from src.data.velocity import VelocityModel
-from src.data.loaders import KinematicData
+from src.data.loaders import GPSDataset
 from src.core.constants import S0, V0
 
 app = typer.Typer()
@@ -60,7 +60,7 @@ class Visualizer:
         self.model.eval()
 
         gps_files = list(Path("data/kinematic_data").glob("gps_strain_*.csv"))
-        self.dataset = KinematicData([str(f) for f in gps_files])
+        self.dataset = GPSDataset([str(f) for f in gps_files])
         self.transformer = self.dataset.transformer
 
         self.min_x_norm = self.dataset.coords[:, 0].min().item()

@@ -5,7 +5,7 @@ from torch.utils.data import Dataset
 from src.data.transformers import CoordinateTransformer
 
 
-class KinematicData(Dataset):
+class GPSDataset(Dataset):
     """
     Dataset for Sparse GPS Strain Rate Azimuths.
     Loads data from CSVs containing [Longitude, Latitude, azimuth_value].
@@ -46,7 +46,7 @@ class KinematicData(Dataset):
         return torch.tensor([x, y]), torch.tensor(theta)
 
 
-class EarthquakeCatalog(Dataset):
+class CatalogDataset(Dataset):
     """
     Dataset for Earthquake Catalog.
     Loads data from cleaned_historical_Eq.csv.

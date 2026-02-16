@@ -8,7 +8,7 @@ import json
 
 from src.training.engine import PINNTrainer
 from src.core.physics import Physics
-from src.data.loaders import KinematicData
+from src.data.loaders import GPSDataset
 from src.data.velocity import VelocityModel
 
 app = typer.Typer()
@@ -38,10 +38,10 @@ class OptunaTrainer(PINNTrainer):
         # Suggested Params
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
 
-        dataset = KinematicData(gps_files)
+        dataset = GPSDataset(gps_files)
         if len(dataset) == 0:
-            return 1e10
-
+            print("Error: Dataset is empty.")
+            return
         self.transformer = dataset.transformer
         spatial_dim = self.model.spatial_dim
 

@@ -7,7 +7,7 @@ from tqdm import tqdm
 from src.core.model import SpatialPINN
 from src.core.physics import Physics
 from src.core.constants import S0, V0
-from src.data.loaders import KinematicData
+from src.data.loaders import GPSDataset
 from src.data.velocity import VelocityModel
 
 
@@ -118,11 +118,11 @@ class PINNTrainer:
         w_bc: float = 1.0,
         velocity_file: Optional[str] = None,
     ):
-        dataset = KinematicData(gps_files)
-        if len(dataset) == 0:
+        self.dataset = GPSDataset(gps_files)
+        if len(self.dataset) == 0:
             print("Error: Dataset is empty.")
             return
-        self.transformer = dataset.transformer
+        self.transformer = self.dataset.transformer
         spatial_dim = self.model.spatial_dim
 
         vel_model = None
@@ -130,13 +130,13 @@ class PINNTrainer:
             vel_model = VelocityModel(velocity_file, self.transformer)
 
         dataloader = torch.utils.data.DataLoader(
-            dataset, batch_size=len(dataset), shuffle=True
+            self.dataset, batch_size=len(self.dataset), shuffle=True
         )
 
-        min_x = dataset.coords[:, 0].min().item()
-        max_x = dataset.coords[:, 0].max().item()
-        min_y = dataset.coords[:, 1].min().item()
-        max_y = dataset.coords[:, 1].max().item()
+        min_x = self.dataset.coords[:, 0].min().item()
+        max_x = self.dataset.coords[:, 0].max().item()
+        min_y = self.dataset.coords[:, 1].min().item()
+        max_y = self.dataset.coords[:, 1].max().item()
 
         pbar = tqdm(range(epochs), desc="Training PINN")
         for epoch in pbar:
@@ -176,6 +176,12 @@ class PINNTrainer:
                     )
                     loss_const = torch.mean(res_c_xx**2 + res_c_yy**2 + res_c_xy**2)
                     loss_bc = torch.tensor(0.0, device=self.device)
+                if spatial_dim == 3:
+                    Z_norm = torch.linspace(-1, 1, n_coll).to(self.device).view(-1, 1)
+                    # Sample Lat/Lon from dataset to get UTM range
+                    lats = self.dataset.data["latitude"].values
+                    lons = self.dataset.data["longitude"].values
+                    coords_norm = self.dataset.coords
 
                 loss = (
                     w_data * loss_data

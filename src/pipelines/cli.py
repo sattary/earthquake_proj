@@ -7,7 +7,7 @@ from typing import Optional
 from src.training.engine import PINNTrainer
 from src.training.tuner import run_tuning
 from src.pipelines.eda import audit as run_audit
-from src.pipelines.inference import plot as run_plot
+from src.pipelines.inference import app as inference_app
 
 app = typer.Typer(help="L3 Earthquake PINN Operational Pipeline")
 
@@ -104,7 +104,9 @@ def plot(
     """
     Generate physical maps from a trained model.
     """
-    run_plot(
+    from src.pipelines.inference import run_plotting
+
+    run_plotting(
         model_path=model_path,
         depth=depth,
         fourier_scale=fourier_scale,
