@@ -52,17 +52,28 @@ class CatalogDataset(Dataset):
     Loads data from cleaned_historical_Eq.csv.
     """
 
-    def __init__(self, csv_file):
+    def __init__(self, csv_file, transformer: CoordinateTransformer = None):
         self.data = pd.read_csv(csv_file)
         self.long = self.data["long"].values.astype(np.float32)
         self.lat = self.data["lat"].values.astype(np.float32)
         self.depth = self.data["fd"].fillna(0).values.astype(np.float32)
         self.mag = self.data["mw_unified"].values.astype(np.float32)
 
+        self.transformer = transformer
+        if self.transformer:
+            self.coords = self.transformer.to_normalized(self.lat, self.long)
+        else:
+            # Fallback: No normalization (Raw Lat/Lon)
+            # WARNING: This will break if used with PINN.
+            self.coords = torch.stack(
+                [torch.tensor(self.long), torch.tensor(self.lat)], dim=1
+            )
+
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
+        # Returns: x, y, z(depth), mag
         return torch.tensor(
-            [self.long[idx], self.lat[idx], self.depth[idx], self.mag[idx]]
+            [self.coords[idx, 0], self.coords[idx, 1], self.depth[idx], self.mag[idx]]
         )

@@ -7,7 +7,7 @@ ETA_BASELINE = 1e21  # Baseline effective viscosity (Pa.s)
 MU_BASELINE = 30e9  # Baseline shear modulus (Pa)
 
 # Characteristic Scales (Non-Dimensionalization)
-S0 = 1e8  # Characteristic Stress (Pa) - Typically 10-100 MPa
+S0 = 1e9  # Characteristic Stress (Pa) - 1 GPa to cover lithostatic range
 V0 = 1e-9  # Characteristic Velocity (m/s) - ~3 cm/year
 L0 = 1e6  # Characteristic Length (m) - 1,000 km
 T0 = L0 / V0  # Characteristic Time (s)

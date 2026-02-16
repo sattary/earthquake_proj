@@ -36,7 +36,32 @@ def test_catalog_dataset_filtering(tmp_path):
     df.to_csv(txt_path, index=False)
 
     dataset = CatalogDataset(str(txt_path))
-
-    # Values 1 and 2 should pass, value 3 (Mag 3.0) and value 4 (higher depth) logic check
-    # Let's verify row count.
     assert len(dataset) == 3
+
+
+def test_catalog_dataset_normalization(tmp_path):
+    # Dummy catalog
+    df = pd.DataFrame(
+        {
+            "long": [51.5, 52.5],
+            "lat": [35.5, 36.5],
+            "fd": [10.0, 20.0],
+            "mw_unified": [4.0, 5.0],
+        }
+    )
+    txt_path = tmp_path / "dummy_norm_catalog.csv"
+    df.to_csv(txt_path, index=False)
+
+    # Manual transformer mock
+    from src.data.transformers import CoordinateTransformer
+
+    # Create a transformer based on these points
+    transformer = CoordinateTransformer(df["lat"].values, df["long"].values)
+
+    dataset = CatalogDataset(str(txt_path), transformer=transformer)
+
+    x, y, z, mag = dataset[0]
+
+    # Check bounds - should be within [-1, 1]
+    assert -1.05 <= x <= 1.05
+    assert -1.05 <= y <= 1.05
