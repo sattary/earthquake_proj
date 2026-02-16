@@ -47,7 +47,7 @@ class Visualizer:
         model_path: str,
         velocity_file: Optional[str] = None,
         spatial_dim: int = 3,
-        fourier_scale: float = 10.0,
+        fourier_scale: float = 1.0,
         device: str = "cpu",
     ):
         self.device = torch.device(device)
@@ -205,9 +205,11 @@ def run_plotting(
 
 
 @app.command()
-def results_suite(model_path: str = "checkpoints/final_model.pth"):
+def results_suite(
+    model_path: str = "checkpoints/final_model.pth", fourier_scale: float = 1.0
+):
     os.makedirs("results/figs", exist_ok=True)
-    vis = Visualizer(model_path)
+    vis = Visualizer(model_path, fourier_scale=fourier_scale)
     print("Generating Academic Stress Panel...")
     vis.plot_stress_panel([5.0, 15.0, 25.0], "results/figs/stress_panel_3d.png")
     print("Generating Vertical Stress Profile...")

@@ -117,13 +117,16 @@ def plot(
 
 
 @app.command()
-def results_suite(model_path: str = "checkpoints/final_model.pth"):
+def results_suite(
+    model_path: str = "checkpoints/final_model.pth",
+    fourier_scale: float = typer.Option(1.0, help="Fourier Feature scale"),
+):
     """
     Generate the complete academic figure package (Panels, Profiles, Loss).
     """
     from src.pipelines.inference import results_suite as run_suite
 
-    run_suite(model_path=model_path)
+    run_suite(model_path=model_path, fourier_scale=fourier_scale)
 
 
 if __name__ == "__main__":
