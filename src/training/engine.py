@@ -147,60 +147,101 @@ class PINNTrainer:
                 x_batch = x_batch.to(self.device)
                 theta_batch = theta_batch.to(self.device)
 
-                x_coll = torch.rand(n_coll, spatial_dim, device=self.device)
-                x_coll[:, 0] = x_coll[:, 0] * (max_x - min_x) + min_x
-                x_coll[:, 1] = x_coll[:, 1] * (max_y - min_y) + min_y
+                # Prepare Data Batch (Add surface depth if 3D)
                 if spatial_dim == 3:
-                    x_coll[:, 2] = x_coll[:, 2] * 2.0 - 1.0
-                    x_surf = torch.rand(n_coll // 4, 3, device=self.device)
-                    x_surf[:, 0] = x_surf[:, 0] * (max_x - min_x) + min_x
-                    x_surf[:, 1] = x_surf[:, 1] * (max_y - min_y) + min_y
-                    x_surf[:, 2] = -1.0
                     z_surf = -1.0 * torch.ones(x_batch.shape[0], 1, device=self.device)
                     x_batch_in = torch.cat([x_batch, z_surf], dim=1)
                 else:
-                    x_surf = None
                     x_batch_in = x_batch
 
+                self.optimizer.zero_grad()
+
+                # 1. Data Loss (Full Batch - small enough)
                 loss_data = self.compute_data_loss(x_batch_in, theta_batch)
+                (w_data * loss_data).backward()
 
-                if spatial_dim == 3:
-                    loss_pde, loss_const, loss_bc = self.compute_physics_losses_3d(
-                        x_coll, x_surf, vel_model
-                    )
-                else:
-                    res_x, res_y = Physics.momentum_balance_2d(self.model, x_coll)
-                    loss_pde = torch.mean(res_x**2 + res_y**2)
-                    res_c_xx, res_c_yy, res_c_xy = Physics.constitutive_2d(
-                        self.model, x_coll, eta=1.0
-                    )
-                    loss_const = torch.mean(res_c_xx**2 + res_c_yy**2 + res_c_xy**2)
-                    loss_bc = torch.tensor(0.0, device=self.device)
+                current_epoch_loss = w_data * loss_data.item()
+                total_pde = 0.0
+                total_const = 0.0
+                total_bc = 0.0
 
-                loss = (
-                    w_data * loss_data
-                    + w_pde * loss_pde
-                    + w_const * loss_const
-                    + w_bc * loss_bc
+                # 2. Physics Loss (Gradient Accumulation in Chunks)
+                batch_size_physics = 4096
+                num_batches = (n_coll + batch_size_physics - 1) // batch_size_physics
+
+                for _ in range(num_batches):
+                    # Generate mini-batch of collocation points
+                    current_n = min(
+                        batch_size_physics, n_coll
+                    )  # Approximate, simpler to just use fixed batch
+                    x_coll = torch.rand(
+                        batch_size_physics, spatial_dim, device=self.device
+                    )
+                    x_coll[:, 0] = x_coll[:, 0] * (max_x - min_x) + min_x
+                    x_coll[:, 1] = x_coll[:, 1] * (max_y - min_y) + min_y
+
+                    x_surf = None
+                    if spatial_dim == 3:
+                        x_coll[:, 2] = x_coll[:, 2] * 2.0 - 1.0
+                        # Surface points proportional to volume points
+                        n_surf = batch_size_physics // 4
+                        x_surf = torch.rand(n_surf, 3, device=self.device)
+                        x_surf[:, 0] = x_surf[:, 0] * (max_x - min_x) + min_x
+                        x_surf[:, 1] = x_surf[:, 1] * (max_y - min_y) + min_y
+                        x_surf[:, 2] = -1.0
+
+                    # Compute Physics Losses for this chunk
+                    if spatial_dim == 3:
+                        l_pde, l_const, l_bc = self.compute_physics_losses_3d(
+                            x_coll, x_surf, vel_model
+                        )
+                    else:
+                        res_x, res_y = Physics.momentum_balance_2d(self.model, x_coll)
+                        l_pde = torch.mean(res_x**2 + res_y**2)
+                        res_c_xx, res_c_yy, res_c_xy = Physics.constitutive_2d(
+                            self.model, x_coll, eta=1.0
+                        )
+                        l_const = torch.mean(res_c_xx**2 + res_c_yy**2 + res_c_xy**2)
+                        l_bc = torch.tensor(0.0, device=self.device)
+
+                    # Scale loss by 1/num_batches for averaging
+                    loss_chunk = (
+                        w_pde * l_pde + w_const * l_const + w_bc * l_bc
+                    ) / num_batches
+
+                    loss_chunk.backward()
+
+                    # Accumulate for logging
+                    total_pde += l_pde.item()
+                    total_const += l_const.item()
+                    total_bc += l_bc.item()
+
+                # Step Optimizer
+                self.optimizer.step()
+
+                # Logging Stats
+                avg_pde = total_pde / num_batches
+                avg_const = total_const / num_batches
+                avg_bc = total_bc / num_batches
+                current_epoch_loss += (
+                    w_pde * avg_pde + w_const * avg_const + w_bc * avg_bc
                 )
 
-                self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
-                epoch_loss = loss.item()
-
-            self.history["loss"].append(epoch_loss)
+            self.history["loss"].append(current_epoch_loss)
             self.history["loss_data"].append(loss_data.item())
-            self.history["loss_pde"].append(loss_pde.item())
-            self.history["loss_const"].append(loss_const.item())
+            self.history["loss_pde"].append(avg_pde)
+            self.history["loss_const"].append(avg_const)
             if spatial_dim == 3:
                 if "loss_bc" not in self.history:
                     self.history["loss_bc"] = []
-                self.history["loss_bc"].append(loss_bc.item())
+                self.history["loss_bc"].append(avg_bc)
 
             if epoch % 10 == 0:
                 pbar.set_postfix(
-                    {"Loss": f"{epoch_loss:.4f}", "Dat": f"{loss_data.item():.4f}"}
+                    {
+                        "Loss": f"{current_epoch_loss:.4f}",
+                        "Dat": f"{loss_data.item():.4f}",
+                    }
                 )
 
             if (epoch + 1) % 1000 == 0:
