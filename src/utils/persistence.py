@@ -3,13 +3,11 @@ import sys
 import subprocess
 from pathlib import Path
 
-# Try to import Kaggle secrets (only works on Kaggle)
+# Try to import Kaggle secrets
 try:
     from kaggle_secrets import UserSecretsClient
-
-    KAGGLE = True
 except ImportError:
-    KAGGLE = False
+    UserSecretsClient = None
 
 
 def run_command(cmd, cwd=None):
@@ -24,10 +22,11 @@ def run_command(cmd, cwd=None):
             stderr=subprocess.PIPE,
             text=True,
         )
-        print(result.stdout)
+        if result.stdout:
+            print(result.stdout)
     except subprocess.CalledProcessError as e:
         print(f"Error running command: {cmd}")
-        print(e.stderr)
+        print(f"Error output: {e.stderr}")
         raise
 
 
@@ -42,8 +41,10 @@ class DataPersistence:
 
     def _setup_git_auth(self):
         """Configures Git with the token from secrets."""
-        if not self.is_kaggle:
-            print("[Info] Not on Kaggle. Assuming local git is configured.")
+        if not self.is_kaggle or UserSecretsClient is None:
+            print(
+                "[Info] Not on Kaggle or Kaggle secrets not available. Using local git config."
+            )
             return
 
         print("[Auth] Configuring Git with Kaggle Secrets...")
@@ -53,10 +54,9 @@ class DataPersistence:
 
             # 1. Configure User
             run_command(
-                "git config --global user.email 'kaggle-bot@example.com'",
-                cwd=self.repo_dir,
+                "git config user.email 'kaggle-bot@example.com'", cwd=self.repo_dir
             )
-            run_command("git config --global user.name 'Kaggle Bot'", cwd=self.repo_dir)
+            run_command("git config user.name 'Kaggle Bot'", cwd=self.repo_dir)
 
             # 2. Get Current Remote
             result = subprocess.run(
@@ -68,15 +68,22 @@ class DataPersistence:
             )
             original_url = result.stdout.strip()
 
-            # 3. Inject Token into URL
-            # Format: https://TOKEN@github.com/USER/REPO.git
-            if "https://" in original_url:
-                auth_url = original_url.replace("https://", f"https://{token}@")
+            # 3. Inject Token into URL properly
+            # Format: https://x-access-token:TOKEN@github.com/USER/REPO.git
+            if "github.com" in original_url:
+                # Remove existing auth if present and replace
+                clean_url = (
+                    original_url.split("@")[-1]
+                    if "@" in original_url
+                    else original_url.replace("https://", "")
+                )
+                auth_url = f"https://x-access-token:{token}@{clean_url}"
+
                 run_command(f"git remote set-url origin {auth_url}", cwd=self.repo_dir)
-                print("[Auth] Git remote configured with token.")
+                print("[Auth] Git remote configured with x-access-token.")
             else:
                 print(
-                    f"[Warning] Remote URL is not HTTPS: {original_url}. Cannot inject token."
+                    f"[Warning] Remote URL is not a GitHub HTTPS URL: {original_url}. Skipping token injection."
                 )
 
         except Exception as e:
