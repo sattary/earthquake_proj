@@ -28,6 +28,7 @@ def train(
     ),
     config: Optional[str] = typer.Option(None, help="Path to best_params.json"),
     resume: bool = typer.Option(False, help="Resume from latest checkpoint"),
+    multi_gpu: bool = typer.Option(True, help="Use multiple GPUs if available"),
 ):
     """
     Train the PINN model using the modular core engine.
@@ -41,8 +42,7 @@ def train(
             w_const = params.get("w_const", w_const)
             w_bc = params.get("w_bc", w_bc)
             fourier_scale = params.get("fourier_scale", fourier_scale)
-
-            fourier_scale = params.get("fourier_scale", fourier_scale)
+            multi_gpu = params.get("multi_gpu", multi_gpu)
 
     # Resolve Persistence Callback
     persistence = None
@@ -63,6 +63,7 @@ def train(
         lr=lr,
         fourier_scale=fourier_scale,
         on_checkpoint_save=on_save_callback,
+        multi_gpu=multi_gpu,
     )
     gps_files = glob.glob("data/kinematic_data/gps_strain_*.csv")
 
@@ -107,6 +108,7 @@ def tune(
     velocity_file: Optional[str] = typer.Option(
         "data/Morteza_2023/Vel/Pwave.3D.txt", help="Path to Velocity Model"
     ),
+    multi_gpu: bool = typer.Option(False, help="Use multiple GPUs for tuning trials"),
 ):
     """
     Run Hyperparameter Tuning.
@@ -116,6 +118,7 @@ def tune(
         epochs=epochs,
         spatial_dim=spatial_dim,
         velocity_file=velocity_file,
+        multi_gpu=multi_gpu,
     )
 
 

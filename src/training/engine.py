@@ -25,6 +25,7 @@ class PINNTrainer:
         fourier_scale: float = 10.0,
         checkpoint_dir: str = "checkpoints",
         on_checkpoint_save: Optional[Callable[[str], None]] = None,
+        multi_gpu: bool = True,
     ):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.on_checkpoint_save = on_checkpoint_save
@@ -33,12 +34,12 @@ class PINNTrainer:
         ).to(self.device)
 
         # Multi-GPU Support
-        self.multi_gpu = torch.cuda.device_count() > 1
+        self.multi_gpu = multi_gpu and torch.cuda.device_count() > 1
         if self.multi_gpu:
-            print(f"Detected {torch.cuda.device_count()} GPUs. Enabling DataParallel.")
+            print(f"Detected {torch.cuda.device_count()} GPUs. Multi-GPU enabled.")
             self.model = torch.nn.DataParallel(self.raw_model)
         else:
-            print(f"Using single device: {self.device}")
+            print(f"Using single device: {self.device} (Multi-GPU: {multi_gpu})")
             self.model = self.raw_model
 
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
