@@ -3,11 +3,40 @@ import sys
 import subprocess
 from pathlib import Path
 
-# Try to import Kaggle secrets
-try:
-    from kaggle_secrets import UserSecretsClient
-except ImportError:
-    UserSecretsClient = None
+# kaggle_secrets is a system-level package on Kaggle, not installed in the uv venv.
+# We use importlib to find and load it from the system site-packages at runtime.
+import importlib
+import importlib.util
+
+
+def _load_kaggle_secrets():
+    """Load UserSecretsClient from system Python if not available in venv."""
+    try:
+        from kaggle_secrets import UserSecretsClient
+
+        return UserSecretsClient
+    except ImportError:
+        pass
+
+    # Fallback: search system site-packages explicitly
+    import site
+
+    for site_dir in site.getsitepackages():
+        spec = importlib.util.spec_from_file_location(
+            "kaggle_secrets",
+            os.path.join(site_dir, "kaggle_secrets.py"),
+        )
+        if spec and spec.loader:
+            mod = importlib.util.module_from_spec(spec)
+            try:
+                spec.loader.exec_module(mod)
+                return mod.UserSecretsClient
+            except Exception:
+                continue
+    return None
+
+
+UserSecretsClient = _load_kaggle_secrets()
 
 
 def run_command(cmd, cwd=None):
