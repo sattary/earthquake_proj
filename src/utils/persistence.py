@@ -2,15 +2,28 @@ import os
 import sys
 import subprocess
 from pathlib import Path
-
-# kaggle_secrets is a system-level package on Kaggle, not installed in the uv venv.
-# We use importlib to find and load it from the system site-packages at runtime.
 import importlib
 import importlib.util
 
 
+# --- Kaggle Secrets Loader ---
+# kaggle_secrets is a system-level package on Kaggle (e.g. /opt/conda/lib/python3.10/...).
+# When running under `uv run`, the venv isolates us from system packages.
+# We must search known Kaggle system paths explicitly.
+_KAGGLE_SYSTEM_PATHS = [
+    "/opt/conda/lib/python3.10/site-packages",
+    "/opt/conda/lib/python3.11/site-packages",
+    "/opt/conda/lib/python3.12/site-packages",
+    "/usr/lib/python3/dist-packages",
+    "/usr/local/lib/python3.10/dist-packages",
+    "/usr/local/lib/python3.11/dist-packages",
+    "/usr/local/lib/python3.12/dist-packages",
+]
+
+
 def _load_kaggle_secrets():
-    """Load UserSecretsClient from system Python if not available in venv."""
+    """Load UserSecretsClient, searching system paths if venv import fails."""
+    # 1. Try normal import (works if not in a venv, or package is somehow available)
     try:
         from kaggle_secrets import UserSecretsClient
 
@@ -18,25 +31,81 @@ def _load_kaggle_secrets():
     except ImportError:
         pass
 
-    # Fallback: search system site-packages explicitly
-    import site
+    # 2. Not on Kaggle at all? Skip.
+    if "KAGGLE_KERNEL_RUN_TYPE" not in os.environ:
+        return None
 
-    for site_dir in site.getsitepackages():
-        spec = importlib.util.spec_from_file_location(
-            "kaggle_secrets",
-            os.path.join(site_dir, "kaggle_secrets.py"),
+    # 3. We ARE on Kaggle but inside a uv venv. Search system paths.
+    print("[Import] Searching system paths for kaggle_secrets...")
+    for search_dir in _KAGGLE_SYSTEM_PATHS:
+        candidate = os.path.join(search_dir, "kaggle_secrets.py")
+        if os.path.isfile(candidate):
+            spec = importlib.util.spec_from_file_location("kaggle_secrets", candidate)
+            if spec and spec.loader:
+                mod = importlib.util.module_from_spec(spec)
+                try:
+                    spec.loader.exec_module(mod)
+                    print(f"[Import] Found kaggle_secrets at {candidate}")
+                    return mod.UserSecretsClient
+                except Exception as exc:
+                    print(f"[Import] Failed to load from {candidate}: {exc}")
+                    continue
+
+    # 4. Last resort: use subprocess to ask system Python directly
+    try:
+        result = subprocess.run(
+            [
+                sys.executable.replace(".venv/bin/python", "/opt/conda/bin/python"),
+                "-c",
+                "import kaggle_secrets; print(kaggle_secrets.__file__)",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
-        if spec and spec.loader:
-            mod = importlib.util.module_from_spec(spec)
-            try:
+        if result.returncode == 0:
+            secrets_path = result.stdout.strip()
+            spec = importlib.util.spec_from_file_location(
+                "kaggle_secrets", secrets_path
+            )
+            if spec and spec.loader:
+                mod = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(mod)
+                print(f"[Import] Found kaggle_secrets via subprocess at {secrets_path}")
                 return mod.UserSecretsClient
-            except Exception:
-                continue
+    except Exception:
+        pass
+
+    print("[Import] WARNING: Could not find kaggle_secrets anywhere.")
     return None
 
 
 UserSecretsClient = _load_kaggle_secrets()
+
+
+def _get_github_token():
+    """Get github_token from Kaggle Secrets, with subprocess fallback."""
+    if UserSecretsClient is not None:
+        return UserSecretsClient().get_secret("github_token")
+
+    # Fallback: call system Python to get the secret
+    try:
+        result = subprocess.run(
+            [
+                "/opt/conda/bin/python",
+                "-c",
+                "from kaggle_secrets import UserSecretsClient; "
+                "print(UserSecretsClient().get_secret('github_token'))",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return None
 
 
 def run_command(cmd, cwd=None):
@@ -65,23 +134,24 @@ class DataPersistence:
         self.is_colab = "google.colab" in sys.modules
         self.is_kaggle = "KAGGLE_KERNEL_RUN_TYPE" in os.environ
         print(
-            f"[Init] Environment: {'Colab' if self.is_colab else 'Kaggle' if self.is_kaggle else 'Local/Other'}"
+            f"[Init] Environment: "
+            f"{'Colab' if self.is_colab else 'Kaggle' if self.is_kaggle else 'Local/Other'}"
         )
 
     def _setup_git_auth(self):
-        """Configures Git with the token from secrets."""
-        if not self.is_kaggle or UserSecretsClient is None:
-            print(
-                "[Info] Not on Kaggle or Kaggle secrets not available. Using local git config."
-            )
+        """Configures Git with the GitHub PAT from Kaggle Secrets."""
+        if not self.is_kaggle:
+            print("[Info] Not on Kaggle. Using local git config.")
             return
 
         print("[Auth] Configuring Git with Kaggle Secrets...")
         try:
-            user_secrets = UserSecretsClient()
-            token = user_secrets.get_secret("github_token")
+            token = _get_github_token()
+            if not token:
+                print("[Auth Error] Could not retrieve github_token.")
+                return
 
-            # 1. Configure User
+            # 1. Configure User identity
             run_command(
                 "git config user.email 'kaggle-bot@example.com'", cwd=self.repo_dir
             )
@@ -97,23 +167,20 @@ class DataPersistence:
             )
             original_url = result.stdout.strip()
 
-            # 3. Inject Token into URL properly
-            # Format: https://x-access-token:TOKEN@github.com/USER/REPO.git
+            # 3. Inject PAT into URL
+            # For Personal Access Tokens (classic): https://TOKEN@github.com/USER/REPO.git
             if "github.com" in original_url:
-                # Remove existing auth if present and replace
-                clean_url = (
-                    original_url.split("@")[-1]
-                    if "@" in original_url
-                    else original_url.replace("https://", "")
-                )
-                auth_url = f"https://x-access-token:{token}@{clean_url}"
+                # Strip any existing auth from the URL
+                if "@" in original_url:
+                    clean_url = original_url.split("@")[-1]
+                else:
+                    clean_url = original_url.replace("https://", "")
+                auth_url = f"https://{token}@{clean_url}"
 
                 run_command(f"git remote set-url origin {auth_url}", cwd=self.repo_dir)
-                print("[Auth] Git remote configured with x-access-token.")
+                print("[Auth] Git remote configured with PAT.")
             else:
-                print(
-                    f"[Warning] Remote URL is not a GitHub HTTPS URL: {original_url}. Skipping token injection."
-                )
+                print(f"[Warning] Remote URL is not GitHub HTTPS: {original_url}")
 
         except Exception as e:
             print(f"[Auth Error] Failed to configure Git: {e}")
