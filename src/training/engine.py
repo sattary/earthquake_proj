@@ -1,7 +1,8 @@
 import torch
 import torch.optim as optim
 from pathlib import Path
-from typing import List, Optional
+import os
+from typing import List, Optional, Callable
 from tqdm import tqdm
 
 from src.core.model import SpatialPINN
@@ -23,8 +24,10 @@ class PINNTrainer:
         lr: float = 1e-3,
         fourier_scale: float = 10.0,
         checkpoint_dir: str = "checkpoints",
+        on_checkpoint_save: Optional[Callable[[str], None]] = None,
     ):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.on_checkpoint_save = on_checkpoint_save
         self.raw_model = SpatialPINN(
             spatial_dim=spatial_dim, fourier_scale=fourier_scale
         ).to(self.device)
@@ -116,6 +119,26 @@ class PINNTrainer:
 
         return loss_pde, loss_const, loss_bc
 
+    def load_checkpoint(self, path: str) -> int:
+        """Loads model state from path and returns the epoch number."""
+        print(f"Loading checkpoint from {path}...")
+        checkpoint = torch.load(path, map_location=self.device)
+
+        if self.multi_gpu:
+            self.model.module.load_state_dict(checkpoint)
+        else:
+            self.model.load_state_dict(checkpoint)
+
+        try:
+            filename = Path(path).stem
+            epoch = int(filename.split("_")[-1])
+            return epoch
+        except Exception:
+            print(
+                f"Warning: Could not extract epoch from filename {path}. Starting/Continuing with current epoch counter."
+            )
+            return 0
+
     def train(
         self,
         gps_files: List[str],
@@ -126,6 +149,7 @@ class PINNTrainer:
         w_const: float = 1.0,
         w_bc: float = 1.0,
         velocity_file: Optional[str] = None,
+        resume_from_checkpoint: Optional[str] = None,
     ):
         self.dataset = GPSDataset(gps_files)
         if len(self.dataset) == 0:
@@ -147,7 +171,17 @@ class PINNTrainer:
         min_y = self.dataset.coords[:, 1].min().item()
         max_y = self.dataset.coords[:, 1].max().item()
 
-        pbar = tqdm(range(epochs), desc="Training PINN")
+        start_epoch = 0
+        if resume_from_checkpoint:
+            if os.path.exists(resume_from_checkpoint):
+                start_epoch = self.load_checkpoint(resume_from_checkpoint)
+                print(f"Resuming training from epoch {start_epoch}")
+            else:
+                print(
+                    f"Checkpoint {resume_from_checkpoint} not found. Starting from 0."
+                )
+
+        pbar = tqdm(range(start_epoch, epochs), desc="Training PINN")
         for epoch in pbar:
             self.model.train()
             # self.optimizer.zero_grad() # Moved inside dataloader loop
@@ -274,3 +308,8 @@ class PINNTrainer:
         )
         torch.save(state_to_save, path)
         print(f"Model saved to {path}")
+        if self.on_checkpoint_save:
+            try:
+                self.on_checkpoint_save(str(path))
+            except Exception as e:
+                print(f"Checkpoint callback failed: {e}")

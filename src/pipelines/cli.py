@@ -3,11 +3,11 @@ import glob
 import os
 import json
 from typing import Optional
+from src.utils.persistence import DataPersistence
 
 from src.training.engine import PINNTrainer
 from src.training.tuner import run_tuning
 from src.pipelines.eda import audit as run_audit
-from src.pipelines.inference import app as inference_app
 
 app = typer.Typer(help="L3 Earthquake PINN Operational Pipeline")
 
@@ -27,6 +27,7 @@ def train(
         "data/Morteza_2023/Vel/Pwave.3D.txt", help="Path to Velocity Model"
     ),
     config: Optional[str] = typer.Option(None, help="Path to best_params.json"),
+    resume: bool = typer.Option(False, help="Resume from latest checkpoint"),
 ):
     """
     Train the PINN model using the modular core engine.
@@ -41,12 +42,49 @@ def train(
             w_bc = params.get("w_bc", w_bc)
             fourier_scale = params.get("fourier_scale", fourier_scale)
 
-    trainer = PINNTrainer(spatial_dim=spatial_dim, lr=lr, fourier_scale=fourier_scale)
+            fourier_scale = params.get("fourier_scale", fourier_scale)
+
+    # Resolve Persistence Callback
+    persistence = None
+    try:
+        persistence = DataPersistence(repo_dir=".")
+    except Exception as e:
+        print(f"Warning: Persistence not available: {e}")
+
+    def on_save_callback(filepath):
+        if persistence:
+            print(f"Pushing {filepath} to GitHub...")
+            persistence.persist(
+                filepath, commit_message=f"auto-save: {os.path.basename(filepath)}"
+            )
+
+    trainer = PINNTrainer(
+        spatial_dim=spatial_dim,
+        lr=lr,
+        fourier_scale=fourier_scale,
+        on_checkpoint_save=on_save_callback,
+    )
     gps_files = glob.glob("data/kinematic_data/gps_strain_*.csv")
 
     if not gps_files:
         print("Error: No GPS files found.")
         raise typer.Exit(code=1)
+
+    # RE-CALLING TRAIN WITH CORRECT ARGS
+    resume_path = None
+    if resume:
+        checkpoints = glob.glob("checkpoints/checkpoint_epoch_*.pth")
+        if checkpoints:
+
+            def extract_epoch(p):
+                try:
+                    return int(os.path.splitext(os.path.basename(p))[0].split("_")[-1])
+                except:
+                    return -1
+
+            latest_checkpoint = max(checkpoints, key=extract_epoch)
+            resume_path = latest_checkpoint
+            print(f"Resuming from: {resume_path}")
 
     trainer.train(
         gps_files,
@@ -57,6 +95,7 @@ def train(
         w_const=w_const,
         w_bc=w_bc,
         velocity_file=velocity_file,
+        resume_from_checkpoint=resume_path,
     )
 
 

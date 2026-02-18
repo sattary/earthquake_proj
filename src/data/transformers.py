@@ -34,7 +34,7 @@ class CoordinateTransformer:
         # Conformal scaling (isotropic)
         self.scale = max(self.max_x - self.min_x, self.max_y - self.min_y) / 2.0
 
-        print(f"CoordinateTransformer Initialized:")
+        print("CoordinateTransformer Initialized:")
         print(
             f"  Bounds (UTM): X[{self.min_x:.1f}, {self.max_x:.1f}] Y[{self.min_y:.1f}, {self.max_y:.1f}]"
         )

@@ -1,6 +1,5 @@
 import os
 import sys
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -121,10 +120,10 @@ class DataPersistence:
             print(f"[Git] Adding {file_path}...")
             run_command(f"git add {file_path}", cwd=self.repo_dir)
 
-            print(f"[Git] Committing...")
+            print("[Git] Committing...")
             run_command(f"git commit -m '{commit_message}'", cwd=self.repo_dir)
 
-            print(f"[Git] Pushing...")
+            print("[Git] Pushing...")
             run_command("git push origin HEAD", cwd=self.repo_dir)
             print("[Success] Pushed to GitHub.")
 
