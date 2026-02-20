@@ -11,6 +11,11 @@ from src.core.constants import S0, V0, MU_BASELINE
 from src.data.loaders import GPSDataset, CatalogDataset
 from src.data.velocity import VelocityModel
 from src.git_automation import AutoPushCallback
+from src.training.multi_gpu import (
+    setup_multi_gpu,
+    get_model_state_dict,
+    load_model_state_dict,
+)
 
 
 class PINNTrainer:
@@ -40,14 +45,13 @@ class PINNTrainer:
             coupling_enabled=coupling_enabled,
         ).to(self.device)
 
-        # Multi-GPU Support
-        self.multi_gpu = multi_gpu and torch.cuda.device_count() > 1
-        if self.multi_gpu:
-            print(f"Detected {torch.cuda.device_count()} GPUs. Multi-GPU enabled.")
-            self.model = torch.nn.DataParallel(self.raw_model)
-        else:
-            print(f"Using single device: {self.device} (Multi-GPU: {multi_gpu})")
-            self.model = self.raw_model
+        # Multi-GPU Support via new multi_gpu module
+        self.multi_gpu = multi_gpu
+        self.model = (
+            setup_multi_gpu(self.raw_model)
+            if multi_gpu
+            else self.raw_model.to(self.device)
+        )
 
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
         self.checkpoint_dir = Path(checkpoint_dir)
@@ -207,11 +211,7 @@ class PINNTrainer:
         Uses strict=False to handle checkpoints missing coupling parameters."""
         print(f"Loading checkpoint from {path}...")
         checkpoint = torch.load(path, map_location=self.device)
-
-        if self.multi_gpu:
-            self.model.module.load_state_dict(checkpoint, strict=False)
-        else:
-            self.model.load_state_dict(checkpoint, strict=False)
+        load_model_state_dict(self.model, checkpoint)
 
         try:
             filename = Path(path).stem
@@ -468,11 +468,7 @@ class PINNTrainer:
 
     def save_model(self, filename: str):
         path = self.checkpoint_dir / filename
-        # Always save the underlying model state_dict for cross-platform compatibility
-        state_to_save = (
-            self.model.module.state_dict()
-            if self.multi_gpu
-            else self.model.state_dict()
-        )
+        # Always save the unwrapped model state_dict for cross-platform compatibility
+        state_to_save = get_model_state_dict(self.model)
         torch.save(state_to_save, path)
         print(f"Model saved to {path}")

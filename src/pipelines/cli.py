@@ -10,10 +10,12 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from src.training.engine import PINNTrainer
 from src.training.tuner import run_tuning
 from src.pipelines.eda import audit as run_audit
 from src.core.config import load_train_config, save_train_config, TrainConfig
 from src.git_automation import add_auto_push_args, create_auto_push_callback
+from src.training.multi_gpu import detect_kaggle_multi_gpu
 
 app = typer.Typer(help="L3 Earthquake PINN Operational Pipeline")
 
@@ -236,6 +238,10 @@ def train(
     coupling_on = cfg.loss.w_seis > 0.0 and cfg.data.catalog_file is not None
     cfg.physics.coupling_enabled = coupling_on
 
+    if cfg.multi_gpu is None and detect_kaggle_multi_gpu():
+        print("[Auto-Detect] Kaggle multi-GPU detected. Enabling multi-GPU mode.")
+        cfg.multi_gpu = True
+
     trainer = PINNTrainer(
         spatial_dim=cfg.model.spatial_dim,
         lr=cfg.optim.lr,
@@ -345,6 +351,10 @@ def tune(
     overrides = {k: v for k, v in overrides.items() if v is not None}
 
     cfg = _resolve_config(config, epochs=epochs, **overrides)
+
+    if cfg.multi_gpu is None and detect_kaggle_multi_gpu():
+        print("[Auto-Detect] Kaggle multi-GPU detected. Enabling multi-GPU mode.")
+        cfg.multi_gpu = True
 
     run_tuning(
         n_trials=trials or 20,
