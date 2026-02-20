@@ -7,7 +7,6 @@ Supports both hierarchical config files (YAML/JSON) and flat CLI options.
 import typer
 import glob
 import os
-from pathlib import Path
 from typing import Optional
 
 from src.training.engine import PINNTrainer
@@ -414,6 +413,130 @@ def results_suite(
     from src.pipelines.inference import results_suite as run_suite
 
     run_suite(model_path=model_path, fourier_scale=fourier_scale)
+
+
+@app.command()
+def generate(
+    regime: str = typer.Option(
+        "simple_shear",
+        help="Analytical regime (lithostatic, simple_shear, uniaxial_compression)",
+    ),
+    num_gps: int = typer.Option(500, help="Number of random GPS stations"),
+    num_events: int = typer.Option(2000, help="Number of earthquake catalog events"),
+    noise_std: float = typer.Option(2.0, help="Gaussian noise std for GPS (degrees)"),
+    out_dir: str = typer.Option("data/synthetic", help="Output directory"),
+):
+    """
+    Generate synthetic data (GPS and Catalog) from an analytical tectonic regime.
+    """
+    from src.validation.synthetic_generator import SyntheticDataGenerator
+
+    print(f"Generating Synthetic Data: Regime={regime}")
+    generator = SyntheticDataGenerator()
+
+    # Generate GPS
+    out_gps = f"{out_dir}/gps_{regime}.csv"
+    generator.generate_gps_data(
+        regime=regime,
+        num_stations=num_gps,
+        noise_std_deg=noise_std,
+        out_path=out_gps,
+    )
+    print(f"✅ GPS data saved to {out_gps} ({num_gps} stations)")
+
+    # Generate Catalog
+    out_cat = f"{out_dir}/catalog_{regime}.txt"
+    generator.generate_catalog(
+        regime=regime,
+        num_events=num_events,
+        out_path=out_cat,
+    )
+    print(f"✅ Catalog data saved to {out_cat} ({num_events} events)")
+
+    # Generate Ground Truth Tensor Grid
+    out_truth = f"{out_dir}/truth_{regime}.pt"
+    generator.generate_ground_truth_grid(
+        regime=regime,
+        resolution=20,
+        out_path=out_truth,
+    )
+    print(f"✅ Ground truth stress grid saved to {out_truth}")
+
+
+@app.command("eval-synthetic")
+def eval_synthetic_cmd(
+    regime: str = typer.Option("simple_shear", help="Analytical tectonic regime"),
+    epochs: int = typer.Option(200, help="Training epochs"),
+    num_gps: int = typer.Option(500, help="Number of GPS stations"),
+    noise_std: float = typer.Option(2.0, help="GPS noise standard deviation"),
+    w_seis: float = typer.Option(1.0, help="Seismicity coupling weight"),
+):
+    """
+    Train PINN on synthetic data and compute exact L2 relative stress error.
+    """
+    from src.analysis.synthetic_eval import evaluate_synthetic_recovery
+
+    evaluate_synthetic_recovery(
+        regime=regime,
+        num_gps=num_gps,
+        noise_std=noise_std,
+        epochs=epochs,
+        w_seis=w_seis,
+    )
+
+
+@app.command("eval-robustness")
+def eval_robustness_cmd(
+    regime: str = typer.Option("simple_shear", help="Analytical tectonic regime"),
+    epochs: int = typer.Option(200, help="Training epochs"),
+    out_file: str = typer.Option(
+        "results/tables/robustness.json", help="JSON output path"
+    ),
+):
+    """
+    Automate GPS sparsity and noise evaluation sweeps.
+    """
+    from src.analysis.robustness import run_robustness_sweeps
+
+    run_robustness_sweeps(regime=regime, epochs=epochs, out_file=out_file)
+
+
+@app.command("eval-ablation")
+def eval_ablation_cmd(
+    regime: str = typer.Option("simple_shear", help="Analytical tectonic regime"),
+    epochs: int = typer.Option(200, help="Training epochs"),
+    out_file: str = typer.Option(
+        "results/tables/ablation_seismicity.json", help="JSON output path"
+    ),
+):
+    """
+    Run physical ablation to prove seismicity coupling resolves magnitude ambiguity.
+    """
+    from src.analysis.ablation import run_physical_ablation
+
+    run_physical_ablation(regime=regime, epochs=epochs, out_file=out_file)
+
+
+@app.command("eval-focal")
+def eval_focal_cmd(
+    model_path: str = typer.Option(
+        "checkpoints/final_model.pth", help="Trained PINN weights"
+    ),
+    focal_mech_file: str = typer.Option(
+        "data/kinematic_data/stress_SS.csv", help="Independent focal mechanism CSV"
+    ),
+    out_file: str = typer.Option(
+        "results/tables/focal_errors.json", help="JSON output path"
+    ),
+):
+    """
+    Compare PINN stress orientation against independent real-world focal mechanisms.
+    """
+    from src.analysis.real_world_val import evaluate_against_focal_mechanisms
+
+    evaluate_against_focal_mechanisms(
+        model_path=model_path, focal_mech_file=focal_mech_file, out_file=out_file
+    )
 
 
 @app.command()
