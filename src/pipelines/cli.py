@@ -539,6 +539,23 @@ def eval_focal_cmd(
     )
 
 
+@app.command("preprocess")
+def preprocess_cmd(
+    input_file: str = typer.Option(
+        "data/files/historical_Eq.txt", help="Raw historical catalog"
+    ),
+    output_file: str = typer.Option(
+        "data/cleaned_historical_Eq.csv", help="Cleaned output path"
+    ),
+):
+    """
+    Clean the messy, tab-separated raw earthquake catalog into a standard format.
+    """
+    from src.data.preprocess import preprocess_catalog
+
+    preprocess_catalog(input_file=input_file, output_file=output_file)
+
+
 @app.command()
 def init_config(
     output: str = "configs/default.yaml",

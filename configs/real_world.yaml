@@ -1,0 +1,42 @@
+data:
+  data_dir: data/kinematic_data
+  gps_pattern: gps_strain_*.csv
+  velocity_file: data/Morteza_2023/Vel/Pwave.3D.txt
+  catalog_file: data/cleaned_historical_Eq.csv
+  val_frac: 0.15
+  workers: 4
+  min_magnitude: 4.0
+  augment: false
+model:
+  spatial_dim: 3
+  fourier_scale: 1.0
+  mapping_size: 256
+  activation: silu
+  device: auto
+  use_amp: false
+optim:
+  epochs: 20000
+  n_coll: 20000
+  lr: 0.001
+  weight_decay: 1.0e-05
+  grad_clip: 1.0
+  scheduler: cosine
+  eta_min: 1.0e-06
+loss:
+  w_data: 5.0
+  w_pde: 1.0
+  w_const: 1.0
+  w_bc: 1.0
+  w_seis: 1.0
+physics:
+  constitutive: viscous
+  coupling_enabled: true
+  a_param: 0.001
+  mu_friction: 0.75
+  lambda_lame: 30.0
+logging:
+  run_name: default
+  runs_root: runs
+  checkpoint_dir: checkpoints
+  save_interval: 1000
+  seed: 42
