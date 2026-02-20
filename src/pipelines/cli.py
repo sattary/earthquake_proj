@@ -379,40 +379,225 @@ def audit(
 
 
 @app.command()
-def plot(
-    model_path: str = "checkpoints/final_model.pth",
-    depth: float = 10.0,
-    fourier_scale: float = 1.0,
-    velocity_file: Optional[str] = "data/Morteza_2023/Vel/Pwave.3D.txt",
-    output_stress: str = "results/figs/stress_map.png",
-    output_velocity: str = "results/figs/velocity_map.png",
+def plot_history(
+    run_dir: str = typer.Option(
+        "runs/current", help="Run directory containing training_history.json"
+    ),
+    out: str = typer.Option("results/figs/loss_history.png", help="Output path"),
 ):
-    """
-    Generate physical maps from a trained model.
-    """
-    from src.pipelines.inference import run_plotting
+    """Plot PINN training loss curves."""
+    from src.visualize.training_curve import plot_training_curve
 
-    run_plotting(
-        model_path=model_path,
-        depth=depth,
-        fourier_scale=fourier_scale,
-        velocity_file=velocity_file,
-        output_stress=output_stress,
-        output_velocity=output_velocity,
+    plot_training_curve(run_dir=run_dir, out_path=out)
+
+
+@app.command()
+def plot_convergence(
+    run_dir: str = typer.Option("runs/current", help="Run directory"),
+    out: str = typer.Option("results/figs/convergence.png", help="Output path"),
+):
+    """Plot multi-component convergence (Log scale)."""
+    from src.visualize.convergence import plot_convergence as plot_conv
+
+    plot_conv(run_dir=run_dir, out_path=out)
+
+
+@app.command()
+def plot_error_hist(
+    model_path: str = typer.Option(
+        "checkpoints/final_model.pth", help="Path to trained model"
+    ),
+    out: str = typer.Option("results/figs/error_hist.png", help="Output path"),
+):
+    """Plot histogram of GPS phase/azimuth residuals."""
+    import torch
+    import numpy as np
+    from pathlib import Path
+    from src.visualize.error_histogram import plot_error_histogram as plot_hist
+    from src.core.model import SpatialPINN
+    from src.data.loaders import GPSDataset
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = SpatialPINN(spatial_dim=3).to(device)
+    try:
+        model.load_state_dict(torch.load(model_path, map_location=device))
+    except Exception as e:
+        print(f"Failed to load model: {e}")
+        return
+    model.eval()
+
+    gps_files = list(Path("data/kinematic_data").glob("gps_strain_*.csv"))
+    if not gps_files:
+        print("No GPS files found.")
+        return
+    dataset = GPSDataset([str(f) for f in gps_files])
+
+    with torch.no_grad():
+        x = dataset.coords.to(device)
+        theta_true = dataset.theta.cpu().numpy()
+        out_tensor = model(x)
+        sxx = out_tensor[:, 3].cpu().numpy()
+        syy = out_tensor[:, 4].cpu().numpy()
+        sxy = out_tensor[:, 6].cpu().numpy()
+        theta_pred = 0.5 * np.arctan2(2 * sxy, sxx - syy) + np.pi / 2
+
+    diff = theta_pred - theta_true
+    errors = np.arctan2(np.sin(diff), np.cos(diff))
+
+    plot_hist(errors=errors, out_path=out, xlabel="Azimuth Error (rad)")
+
+
+@app.command()
+def plot_scatter(
+    model_path: str = typer.Option(
+        "checkpoints/final_model.pth", help="Path to trained model"
+    ),
+    out: str = typer.Option("results/figs/scatter.png", help="Output path"),
+):
+    """Plot predicted vs true azimuth scatter."""
+    import torch
+    import numpy as np
+    from pathlib import Path
+    from src.visualize.prediction_scatter import plot_prediction_scatter as plot_scat
+    from src.core.model import SpatialPINN
+    from src.data.loaders import GPSDataset
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = SpatialPINN(spatial_dim=3).to(device)
+    try:
+        model.load_state_dict(torch.load(model_path, map_location=device))
+    except Exception as e:
+        print(f"Failed to load model: {e}")
+        return
+    model.eval()
+
+    gps_files = list(Path("data/kinematic_data").glob("gps_strain_*.csv"))
+    if not gps_files:
+        print("No GPS files found.")
+        return
+    dataset = GPSDataset([str(f) for f in gps_files])
+
+    with torch.no_grad():
+        x = dataset.coords.to(device)
+        theta_true = dataset.theta.cpu().numpy()
+        out_tensor = model(x)
+        sxx = out_tensor[:, 3].cpu().numpy()
+        syy = out_tensor[:, 4].cpu().numpy()
+        sxy = out_tensor[:, 6].cpu().numpy()
+        theta_pred = 0.5 * np.arctan2(2 * sxy, sxx - syy) + np.pi / 2
+
+    plot_scat(
+        y_true=theta_true,
+        y_pred=theta_pred,
+        out_path=out,
+        xlabel="True Azimuth",
+        ylabel="Predicted Azimuth",
+    )
+
+
+@app.command()
+def plot_cff(
+    model_path: str = typer.Option(
+        "checkpoints/final_model.pth", help="Path to trained model"
+    ),
+    depth: float = typer.Option(15.0, help="Depth slice in km"),
+    out: str = typer.Option("results/figs/cff_map.png", help="Output path"),
+):
+    """Plot Coulomb Failure Function map."""
+    import torch
+    import numpy as np
+    import pandas as pd
+    from pathlib import Path
+    from src.visualize.cff_map import plot_cff_map
+    from src.core.model import SpatialPINN
+    from src.core.physics import Physics
+    from src.data.velocity import VelocityModel
+    from src.data.loaders import Transformer
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = SpatialPINN(spatial_dim=3, coupling_enabled=True).to(device)
+    try:
+        model.load_state_dict(torch.load(model_path, map_location=device))
+    except Exception as e:
+        print(f"Failed to load model: {e}")
+        return
+    model.eval()
+
+    gps_files = list(Path("data/kinematic_data").glob("gps_strain_*.csv"))
+    if not gps_files:
+        print("No GPS files found. Needed for transformer limits.")
+        return
+    import pandas as pd
+
+    dfs = [pd.read_csv(f) for f in gps_files]
+    df = pd.concat(dfs, ignore_index=True)
+    bounds = {
+        "lon_min": df["lon"].min(),
+        "lon_max": df["lon"].max(),
+        "lat_min": df["lat"].min(),
+        "lat_max": df["lat"].max(),
+    }
+    vel_model = VelocityModel("data/Morteza_2023/Vel/Pwave.3D.txt", Transformer(bounds))
+
+    res = 100
+    lon = np.linspace(bounds["lon_min"], bounds["lon_max"], res)
+    lat = np.linspace(bounds["lat_min"], bounds["lat_max"], res)
+    Lon, Lat = np.meshgrid(lon, lat)
+
+    x_norm = (Lon.flatten() - bounds["lon_min"]) / (
+        bounds["lon_max"] - bounds["lon_min"]
+    )
+    y_norm = (Lat.flatten() - bounds["lat_min"]) / (
+        bounds["lat_max"] - bounds["lat_min"]
+    )
+    z_norm = (depth - vel_model.min_dep) / (
+        vel_model.max_dep - vel_model.min_dep
+    ) * 2.0 - 1.0
+
+    pts = np.stack([x_norm, y_norm, np.full_like(x_norm, z_norm)], axis=1)
+    pts_t = torch.tensor(pts, dtype=torch.float32, device=device).requires_grad_(True)
+
+    with torch.no_grad():
+        cff_val, _ = Physics.coulomb_failure(
+            model, pts_t, lambda_p=model.pore_pressure_ratio
+        )
+        cff_np = cff_val.cpu().numpy().reshape(res, res)
+
+    plot_cff_map(
+        x=Lon,
+        y=Lat,
+        cff=cff_np,
+        title=f"Coulomb Failure Function (depth={depth}km)",
+        out_path=out,
     )
 
 
 @app.command()
 def results_suite(
-    model_path: str = "checkpoints/final_model.pth",
-    fourier_scale: float = 1.0,
+    model_path: str = typer.Option("checkpoints/final_model.pth", help="Model path"),
+    run_dir: str = typer.Option("runs/current", help="Run directory (for history)"),
 ):
-    """
-    Generate the complete academic figure package (Panels, Profiles, Loss).
-    """
-    from src.pipelines.inference import results_suite as run_suite
+    """Generate all academic figures."""
+    import os
 
-    run_suite(model_path=model_path, fourier_scale=fourier_scale)
+    os.makedirs("results/figs", exist_ok=True)
+
+    print("Generating Training History...")
+    plot_history(run_dir=run_dir, out="results/figs/loss_history.png")
+
+    print("Generating Convergence Curves...")
+    plot_convergence(run_dir=run_dir, out="results/figs/convergence.png")
+
+    print("Generating Error Histogram...")
+    plot_error_hist(model_path=model_path, out="results/figs/error_hist.png")
+
+    print("Generating Prediction Scatter...")
+    plot_scatter(model_path=model_path, out="results/figs/scatter.png")
+
+    print("Generating Coulomb Failure Function Map (15km)...")
+    plot_cff(model_path=model_path, depth=15.0, out="results/figs/cff_map.png")
+
+    print("Visualization Suite Complete. Check results/figs/ directory.")
 
 
 @app.command()

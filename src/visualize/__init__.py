@@ -39,6 +39,7 @@ from src.visualize.residual_analysis import (
     plot_residual_components,
 )
 from src.visualize._epoch_visuals import save_epoch_visuals, create_epoch_grid
+from src.visualize.cff_map import plot_cff_map
 
 
 __all__ = [
@@ -74,4 +75,5 @@ __all__ = [
     "plot_residual_components",
     "save_epoch_visuals",
     "create_epoch_grid",
+    "plot_cff_map",
 ]
