@@ -31,3 +31,7 @@ notebooks/.bak/
 # Coverage
 .coverage
 htmlcov/
+
+
+# prompts
+prompts/

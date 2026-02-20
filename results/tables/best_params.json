@@ -1,7 +1,0 @@
-{
-    "lr": 0.001,
-    "w_pde": 1.0,
-    "w_const": 1.0,
-    "w_bc": 1.0,
-    "fourier_scale": 1.0
-}

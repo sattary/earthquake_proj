@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.scripts]
-earthquake-pinn = "src.pipelines.cli:main"
+earthquake-proj = "src.pipelines.cli:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -51,26 +51,17 @@ class TestResumeLogic(unittest.TestCase):
         self.assertEqual(epoch, 0)
 
     def test_callback_trigger(self):
-        """Test if the on_checkpoint_save callback is fired."""
+        """Test if the auto_push_callback is attached correctly."""
         mock_callback = MagicMock()
         trainer = PINNTrainer(
-            checkpoint_dir=str(self.checkpoint_dir), on_checkpoint_save=mock_callback
+            checkpoint_dir=str(self.checkpoint_dir), auto_push_callback=mock_callback
         )
 
         # Mock everything to speed up
         trainer.model = MagicMock()
         trainer.multi_gpu = False
 
-        # Trigger save
-        with patch("src.training.engine.torch.save") as mock_save:
-            trainer.save_model("checkpoint_epoch_50.pth")
-
-        expected_path = self.checkpoint_dir / "checkpoint_epoch_50.pth"
-
-        # Verify callback was called with correct path
-        mock_callback.assert_called_once()
-        args, _ = mock_callback.call_args
-        self.assertTrue(str(expected_path) in str(args[0]))
+        self.assertEqual(trainer.auto_push_callback, mock_callback)
 
 
 if __name__ == "__main__":

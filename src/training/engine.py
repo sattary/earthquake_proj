@@ -2,7 +2,7 @@ import torch
 import torch.optim as optim
 from pathlib import Path
 import os
-from typing import List, Optional, Callable
+from typing import List, Optional, Dict
 from tqdm import tqdm
 
 from src.core.model import SpatialPINN
@@ -10,6 +10,7 @@ from src.core.physics import Physics
 from src.core.constants import S0, V0, MU_BASELINE
 from src.data.loaders import GPSDataset, CatalogDataset
 from src.data.velocity import VelocityModel
+from src.git_automation import AutoPushCallback
 
 
 class PINNTrainer:
@@ -24,13 +25,13 @@ class PINNTrainer:
         lr: float = 1e-3,
         fourier_scale: float = 10.0,
         checkpoint_dir: str = "checkpoints",
-        on_checkpoint_save: Optional[Callable[[str], None]] = None,
+        auto_push_callback: Optional[AutoPushCallback] = None,
         multi_gpu: bool = True,
         constitutive: str = "viscous",
         coupling_enabled: bool = False,
     ):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.on_checkpoint_save = on_checkpoint_save
+        self.auto_push_callback = auto_push_callback
         self.constitutive = constitutive
         self.coupling_enabled = coupling_enabled
         self.raw_model = SpatialPINN(
@@ -308,6 +309,9 @@ class PINNTrainer:
             eta_min=1e-6,
         )
 
+        if self.auto_push_callback:
+            self.auto_push_callback.initialize()
+
         pbar = tqdm(range(start_epoch, epochs), desc="Training PINN")
         for epoch in pbar:
             self.model.train()
@@ -428,6 +432,17 @@ class PINNTrainer:
                     }
                 )
 
+            if self.auto_push_callback:
+                metrics = {
+                    "loss": current_epoch_loss,
+                    "loss_data": loss_data.item(),
+                    "loss_pde": avg_pde,
+                    "loss_const": avg_const,
+                }
+                if w_seis > 0:
+                    metrics["loss_seis"] = avg_seis
+                self.auto_push_callback.on_epoch_end(epoch, epochs, metrics)
+
             if (epoch + 1) % 1000 == 0:
                 self.save_model(f"checkpoint_epoch_{epoch + 1}.pth")
 
@@ -442,6 +457,15 @@ class PINNTrainer:
             json.dump(self.history, f, indent=4)
         print(f"Training history saved to {history_path}")
 
+        if self.auto_push_callback:
+            final_metrics = {
+                "loss": self.history["loss"][-1] if self.history["loss"] else 0.0,
+                "loss_data": self.history["loss_data"][-1]
+                if self.history["loss_data"]
+                else 0.0,
+            }
+            self.auto_push_callback.on_train_end(final_metrics)
+
     def save_model(self, filename: str):
         path = self.checkpoint_dir / filename
         # Always save the underlying model state_dict for cross-platform compatibility
@@ -452,8 +476,3 @@ class PINNTrainer:
         )
         torch.save(state_to_save, path)
         print(f"Model saved to {path}")
-        if self.on_checkpoint_save:
-            try:
-                self.on_checkpoint_save(str(path))
-            except Exception as e:
-                print(f"Checkpoint callback failed: {e}")
