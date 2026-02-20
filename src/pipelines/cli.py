@@ -26,6 +26,13 @@ def train(
     velocity_file: Optional[str] = typer.Option(
         "data/Morteza_2023/Vel/Pwave.3D.txt", help="Path to Velocity Model"
     ),
+    catalog_file: Optional[str] = typer.Option(
+        None, help="Path to earthquake catalog for seismicity coupling"
+    ),
+    w_seis: float = typer.Option(0.0, help="Weight for Seismicity Coupling Loss"),
+    constitutive: str = typer.Option(
+        "viscous", help="Constitutive law: 'viscous' (Stokes) or 'elastic' (Hooke)"
+    ),
     config: Optional[str] = typer.Option(None, help="Path to best_params.json"),
     resume: bool = typer.Option(False, help="Resume from latest checkpoint"),
     multi_gpu: bool = typer.Option(True, help="Use multiple GPUs if available"),
@@ -58,12 +65,15 @@ def train(
                 filepath, commit_message=f"auto-save: {os.path.basename(filepath)}"
             )
 
+    coupling_on = w_seis > 0.0 and catalog_file is not None
     trainer = PINNTrainer(
         spatial_dim=spatial_dim,
         lr=lr,
         fourier_scale=fourier_scale,
         on_checkpoint_save=on_save_callback,
         multi_gpu=multi_gpu,
+        constitutive=constitutive,
+        coupling_enabled=coupling_on,
     )
     gps_files = glob.glob("data/kinematic_data/gps_strain_*.csv")
 
@@ -95,7 +105,9 @@ def train(
         w_pde=w_pde,
         w_const=w_const,
         w_bc=w_bc,
+        w_seis=w_seis,
         velocity_file=velocity_file,
+        catalog_file=catalog_file,
         resume_from_checkpoint=resume_path,
     )
 
@@ -109,6 +121,9 @@ def tune(
         "data/Morteza_2023/Vel/Pwave.3D.txt", help="Path to Velocity Model"
     ),
     multi_gpu: bool = typer.Option(False, help="Use multiple GPUs for tuning trials"),
+    constitutive: str = typer.Option(
+        "viscous", help="Constitutive law: 'viscous' or 'elastic'"
+    ),
 ):
     """
     Run Hyperparameter Tuning.
@@ -119,6 +134,8 @@ def tune(
         spatial_dim=spatial_dim,
         velocity_file=velocity_file,
         multi_gpu=multi_gpu,
+        constitutive=constitutive,
+        coupling_enabled=False,
     )
 
 
@@ -171,5 +188,9 @@ def results_suite(
     run_suite(model_path=model_path, fourier_scale=fourier_scale)
 
 
-if __name__ == "__main__":
+def main():
     app()
+
+
+if __name__ == "__main__":
+    main()

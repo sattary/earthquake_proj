@@ -123,6 +123,8 @@ def run_tuning(
     spatial_dim: int = 3,
     velocity_file: Optional[str] = None,
     multi_gpu: bool = False,
+    constitutive: str = "viscous",
+    coupling_enabled: bool = False,
 ):
     gps_files = glob.glob("data/kinematic_data/gps_strain_*.csv")
     if not gps_files:
@@ -133,7 +135,11 @@ def run_tuning(
         # Constrain Fourier Scale to prevent Checkerboarding
         f_scale = trial.suggest_float("f_tune", 0.5, 3.0)
         trainer = OptunaTrainer(
-            spatial_dim=spatial_dim, fourier_scale=f_scale, multi_gpu=multi_gpu
+            spatial_dim=spatial_dim,
+            fourier_scale=f_scale,
+            multi_gpu=multi_gpu,
+            constitutive=constitutive,
+            coupling_enabled=coupling_enabled,
         )
         return trainer.train_optuna(
             trial, gps_files, epochs=epochs, n_coll=5000, velocity_file=velocity_file
