@@ -1,7 +1,7 @@
 [project]
 name = "earthquake-proj"
 version = "0.1.0"
-description = "Add your description here"
+description = "Physics-Informed Neural Network for Lithospheric Stress Inversion"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -18,7 +18,18 @@ dependencies = [
     "seaborn>=0.13.0",
     "wrapt>=2.1.1",
     "pydrive2>=1.21.3",
+    "pyyaml>=6.0.0",
 ]
+
+[project.scripts]
+earthquake-pinn = "src.pipelines.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
 
 [dependency-groups]
 dev = [
