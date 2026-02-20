@@ -6,6 +6,11 @@ RHO_CRUST = 2700.0  # Baseline Crusaders Density (kg/m^3)
 ETA_BASELINE = 1e21  # Baseline effective viscosity (Pa.s)
 MU_BASELINE = 30e9  # Baseline shear modulus (Pa)
 
+# Coulomb-Dieterich Coupling Constants
+MU_FRICTION = 0.6  # Byerlee friction coefficient (dimensionless)
+LAMBDA_P_DEFAULT = 0.37  # Hydrostatic pore pressure ratio (P_f / rho*g*z)
+A_PARAM_DEFAULT = 0.005  # Rate-and-state constitutive parameter
+
 # Characteristic Scales (Non-Dimensionalization)
 S0 = 1e9  # Characteristic Stress (Pa) - 1 GPa to cover lithostatic range
 V0 = 1e-9  # Characteristic Velocity (m/s) - ~3 cm/year

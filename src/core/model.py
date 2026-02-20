@@ -1,6 +1,9 @@
 import torch
 import torch.nn as nn
+import math
 import numpy as np
+
+from src.core.constants import A_PARAM_DEFAULT, LAMBDA_P_DEFAULT
 
 
 class FourierFeature(nn.Module):
@@ -37,7 +40,11 @@ class SpatialPINN(nn.Module):
     """
 
     def __init__(
-        self, spatial_dim=2, hidden_layers=[128, 128, 128, 128], fourier_scale=1.0
+        self,
+        spatial_dim=2,
+        hidden_layers=[128, 128, 128, 128],
+        fourier_scale=1.0,
+        coupling_enabled=False,
     ):
         super().__init__()
 
@@ -69,8 +76,33 @@ class SpatialPINN(nn.Module):
         # Output Head
         self.head = nn.Linear(input_size, self.output_dim)
 
+        # Learnable Coulomb-Dieterich coupling parameters
+        self.coupling_enabled = coupling_enabled
+        if coupling_enabled:
+            # Log-space parameterization enforces positivity: A = exp(log_A)
+            self.log_A = nn.Parameter(torch.tensor(math.log(A_PARAM_DEFAULT)))
+            # Pore pressure ratio, clamped to [0, 1] in property
+            self._lambda_p = nn.Parameter(torch.tensor(LAMBDA_P_DEFAULT))
+            # Log-space background seismicity rate
+            self.log_r0 = nn.Parameter(torch.tensor(0.0))
+
         # Initializing weights (Xavier usually good for Tanh)
         self._init_weights()
+
+    @property
+    def a_param(self):
+        """Rate-and-state parameter A, always positive."""
+        return torch.exp(self.log_A)
+
+    @property
+    def pore_pressure_ratio(self):
+        """Pore pressure ratio lambda_p, clamped to [0, 1]."""
+        return torch.clamp(self._lambda_p, 0.0, 1.0)
+
+    @property
+    def r0(self):
+        """Background seismicity rate, always positive."""
+        return torch.exp(self.log_r0)
 
     def _init_weights(self):
         for m in self.net:

@@ -1,5 +1,5 @@
 import torch
-from src.core.constants import S0, V0, G_ACCEL, RHO_CRUST
+from src.core.constants import S0, V0, G_ACCEL, RHO_CRUST, MU_FRICTION
 
 
 class Physics:
@@ -232,3 +232,209 @@ class Physics:
         sxz = out[:, 8] * stress_scale
 
         return sxz / stress_scale, syz / stress_scale, szz / stress_scale
+
+    @staticmethod
+    def coulomb_failure(
+        model,
+        x,
+        mu_f=MU_FRICTION,
+        lambda_p=0.37,
+        rho=RHO_CRUST,
+        g=G_ACCEL,
+        stress_scale=S0,
+    ):
+        """
+        Compute the Coulomb Failure Function (CFF) on optimally oriented planes.
+
+        CFF = tau_max - mu_f * (sigma_n - P_f)
+
+        where tau_max = (s1 - s3) / 2, sigma_n = (s1 + s3) / 2,
+        and P_f = lambda_p * rho * g * |z| (pore fluid pressure).
+
+        Returns:
+            cff: Coulomb failure function values, shape (N,)
+            sigma_n: Normal stress on optimal planes, shape (N,)
+        """
+        out = model(x)
+
+        sxx = out[:, 3] * stress_scale
+        syy = out[:, 4] * stress_scale
+        szz = out[:, 5] * stress_scale
+        sxy = out[:, 6] * stress_scale
+        syz = out[:, 7] * stress_scale
+        sxz = out[:, 8] * stress_scale
+
+        # Build symmetric 3x3 stress tensor for each point: (N, 3, 3)
+        stress_tensor = torch.stack(
+            [
+                torch.stack([sxx, sxy, sxz], dim=-1),
+                torch.stack([sxy, syy, syz], dim=-1),
+                torch.stack([sxz, syz, szz], dim=-1),
+            ],
+            dim=-2,
+        )
+
+        # Differentiable eigenvalue decomposition (sorted ascending)
+        eigvals = torch.linalg.eigvalsh(stress_tensor)  # (N, 3)
+        s3 = eigvals[:, 0]  # Most compressive (most negative)
+        s1 = eigvals[:, 2]  # Least compressive
+
+        tau_max = (s1 - s3) / 2.0
+        sigma_n = (s1 + s3) / 2.0
+
+        # Pore fluid pressure: P_f = lambda_p * rho * g * depth
+        # z-coordinate is normalized to [-1, 0] where -1 = max depth, 0 = surface
+        # Depth in physical units requires denormalization, but since we operate
+        # in stress space already scaled by stress_scale, we compute P_f directly.
+        # depth = |z_normalized| * L_z (characteristic depth)
+        # For consistency, P_f is computed as a fraction of the mean stress:
+        depth_fraction = torch.abs(x[:, 2])  # 0 at surface, 1 at max depth
+        # Approximate lithostatic: P_lithostatic ~ rho * g * z_max * depth_fraction
+        # With z_max ~ 30km = 3e4 m:
+        z_max = 3e4  # 30 km characteristic depth
+        p_f = lambda_p * rho * g * depth_fraction * z_max
+
+        cff = tau_max - mu_f * (sigma_n - p_f)
+
+        return cff, sigma_n
+
+    @staticmethod
+    def seismicity_rate(cff, sigma_n, a_param, r0):
+        """
+        Dieterich (1994) rate-and-state seismicity rate.
+
+        R(x) = r0 * exp(CFF / (A * |sigma_n|))
+
+        Rationale: A * sigma_n has units of stress and controls the
+        sensitivity of seismicity to Coulomb stress changes. We use
+        |sigma_n| to handle the sign convention (compressive = negative).
+
+        Args:
+            cff: Coulomb failure function values (N,)
+            sigma_n: Normal stress on optimal planes (N,)
+            a_param: Rate-and-state parameter A (scalar tensor)
+            r0: Background seismicity rate (scalar tensor)
+
+        Returns:
+            rate: Predicted seismicity rate (N,), always positive.
+        """
+        # Clamp the exponent to prevent numerical overflow
+        a_sigma = a_param * torch.abs(sigma_n).clamp(min=1e3)
+        exponent = (cff / a_sigma).clamp(max=20.0, min=-20.0)
+        return r0 * torch.exp(exponent)
+
+    @staticmethod
+    def elastic_constitutive_3d(
+        model,
+        x,
+        lam,
+        mu,
+        scale_x=1.0,
+        scale_z=1.0,
+        stress_scale=S0,
+        disp_scale=V0,
+    ):
+        """
+        3D Linear Elastic Constitutive Law (Hooke's Law).
+
+        sigma_ij = lambda * tr(epsilon) * delta_ij + 2 * mu * epsilon_ij
+
+        The network's first 3 outputs are reinterpreted as displacements
+        (u_x, u_y, u_z) rather than velocities. The strain tensor epsilon
+        is computed from displacement gradients via autodiff.
+
+        Rationale: In the elastic formulation, we solve for equilibrium
+        displacements rather than steady-state flow. The mathematical
+        structure is identical to the viscous case (isotropic linear
+        relationship) but with different physical interpretation.
+
+        Args:
+            lam: First Lame parameter, scalar or (N,) tensor
+            mu: Shear modulus (second Lame parameter), scalar or (N,) tensor
+
+        Returns:
+            Tuple of 7 residuals (r_xx, r_yy, r_zz, r_xy, r_yz, r_xz, r_vol)
+            normalized by stress_scale.
+        """
+        x.requires_grad = True
+        out = model(x)
+
+        # Reinterpret velocity outputs as displacements
+        ux = out[:, 0] * disp_scale
+        uy = out[:, 1] * disp_scale
+        uz = out[:, 2] * disp_scale
+
+        sxx = out[:, 3] * stress_scale
+        syy = out[:, 4] * stress_scale
+        szz = out[:, 5] * stress_scale
+        sxy = out[:, 6] * stress_scale
+        syz = out[:, 7] * stress_scale
+        sxz = out[:, 8] * stress_scale
+
+        def get_grads(tensor, inputs):
+            return torch.autograd.grad(
+                tensor,
+                inputs,
+                grad_outputs=torch.ones_like(tensor),
+                create_graph=True,
+            )[0]
+
+        grads_ux = get_grads(ux, x)
+        grads_uy = get_grads(uy, x)
+        grads_uz = get_grads(uz, x)
+
+        inv_sx = 1.0 / scale_x
+        inv_sz = 1.0 / scale_z
+
+        dux_dx = grads_ux[:, 0] * inv_sx
+        dux_dy = grads_ux[:, 1] * inv_sx
+        dux_dz = grads_ux[:, 2] * inv_sz
+
+        duy_dx = grads_uy[:, 0] * inv_sx
+        duy_dy = grads_uy[:, 1] * inv_sx
+        duy_dz = grads_uy[:, 2] * inv_sz
+
+        duz_dx = grads_uz[:, 0] * inv_sx
+        duz_dy = grads_uz[:, 1] * inv_sx
+        duz_dz = grads_uz[:, 2] * inv_sz
+
+        # Strain tensor components
+        eps_xx = dux_dx
+        eps_yy = duy_dy
+        eps_zz = duz_dz
+        eps_xy = 0.5 * (dux_dy + duy_dx)
+        eps_yz = 0.5 * (duy_dz + duz_dy)
+        eps_xz = 0.5 * (dux_dz + duz_dx)
+
+        tr_eps = eps_xx + eps_yy + eps_zz
+
+        # Hooke's law: sigma_ij = lambda * tr(eps) * delta_ij + 2 * mu * eps_ij
+        sig_xx_pred = lam * tr_eps + 2 * mu * eps_xx
+        sig_yy_pred = lam * tr_eps + 2 * mu * eps_yy
+        sig_zz_pred = lam * tr_eps + 2 * mu * eps_zz
+        sig_xy_pred = 2 * mu * eps_xy
+        sig_yz_pred = 2 * mu * eps_yz
+        sig_xz_pred = 2 * mu * eps_xz
+
+        # Residuals: predicted (from Hooke) minus network output
+        res_xx = sxx - sig_xx_pred
+        res_yy = syy - sig_yy_pred
+        res_zz = szz - sig_zz_pred
+        res_xy = sxy - sig_xy_pred
+        res_yz = syz - sig_yz_pred
+        res_xz = sxz - sig_xz_pred
+
+        # Volumetric constraint is implicit in Hooke's law (no incompressibility)
+        # but we include a soft penalty for numerical stability
+        res_vol = torch.zeros_like(res_xx)
+
+        inv_S0 = 1.0 / stress_scale
+        return (
+            res_xx * inv_S0,
+            res_yy * inv_S0,
+            res_zz * inv_S0,
+            res_xy * inv_S0,
+            res_yz * inv_S0,
+            res_xz * inv_S0,
+            res_vol * inv_S0,
+        )

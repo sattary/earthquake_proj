@@ -7,8 +7,8 @@ from tqdm import tqdm
 
 from src.core.model import SpatialPINN
 from src.core.physics import Physics
-from src.core.constants import S0, V0
-from src.data.loaders import GPSDataset
+from src.core.constants import S0, V0, MU_BASELINE
+from src.data.loaders import GPSDataset, CatalogDataset
 from src.data.velocity import VelocityModel
 
 
@@ -26,11 +26,17 @@ class PINNTrainer:
         checkpoint_dir: str = "checkpoints",
         on_checkpoint_save: Optional[Callable[[str], None]] = None,
         multi_gpu: bool = True,
+        constitutive: str = "viscous",
+        coupling_enabled: bool = False,
     ):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.on_checkpoint_save = on_checkpoint_save
+        self.constitutive = constitutive
+        self.coupling_enabled = coupling_enabled
         self.raw_model = SpatialPINN(
-            spatial_dim=spatial_dim, fourier_scale=fourier_scale
+            spatial_dim=spatial_dim,
+            fourier_scale=fourier_scale,
+            coupling_enabled=coupling_enabled,
         ).to(self.device)
 
         # Multi-GPU Support
@@ -45,7 +51,13 @@ class PINNTrainer:
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
         self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        self.history = {"loss": [], "loss_data": [], "loss_pde": [], "loss_const": []}
+        self.history = {
+            "loss": [],
+            "loss_data": [],
+            "loss_pde": [],
+            "loss_const": [],
+            "loss_seis": [],
+        }
         self.transformer = None
 
     def compute_data_loss(self, x_batch_in, theta_batch):
@@ -72,6 +84,7 @@ class PINNTrainer:
     def compute_physics_losses_3d(self, x_coll, x_surf, vel_model):
         """
         Computes 3D physics residuals using the Core Physics engine.
+        Supports both viscous (Stokes) and elastic (Hooke) constitutive laws.
         """
         rho = 2700.0
         mu = 30e9
@@ -100,15 +113,31 @@ class PINNTrainer:
         )
         loss_pde = torch.mean(res_x**2 + res_y**2 + res_z**2)
 
-        r_xx, r_yy, r_zz, r_xy, r_yz, r_xz, r_vol = Physics.constitutive_3d(
-            self.model,
-            x_coll,
-            eta=eta_val,
-            scale_x=scale_x,
-            scale_z=scale_z,
-            stress_scale=S0,
-            vel_scale=V0,
-        )
+        # Branch on constitutive mode
+        if self.constitutive == "elastic":
+            # Compute Lame's first parameter from mu:
+            # Assuming Poisson ratio nu=0.25 -> lambda = mu
+            lam = mu if vel_model is not None else MU_BASELINE
+            r_xx, r_yy, r_zz, r_xy, r_yz, r_xz, r_vol = Physics.elastic_constitutive_3d(
+                self.model,
+                x_coll,
+                lam=lam,
+                mu=mu if vel_model is not None else MU_BASELINE,
+                scale_x=scale_x,
+                scale_z=scale_z,
+                stress_scale=S0,
+                disp_scale=V0,
+            )
+        else:
+            r_xx, r_yy, r_zz, r_xy, r_yz, r_xz, r_vol = Physics.constitutive_3d(
+                self.model,
+                x_coll,
+                eta=eta_val,
+                scale_x=scale_x,
+                scale_z=scale_z,
+                stress_scale=S0,
+                vel_scale=V0,
+            )
         loss_const = torch.mean(
             r_xx**2 + r_yy**2 + r_zz**2 + r_xy**2 + r_yz**2 + r_xz**2 + r_vol**2
         )
@@ -120,15 +149,68 @@ class PINNTrainer:
 
         return loss_pde, loss_const, loss_bc
 
+    def compute_seismicity_loss(self, x_catalog, x_coll):
+        """
+        Compute the Poisson negative log-likelihood seismicity coupling loss.
+
+        Rationale: The earthquake catalog is a point process. The natural
+        loss is -sum(log R(x_i)) + integral(R(x)) where the integral
+        is approximated by Monte Carlo over collocation points.
+
+        Args:
+            x_catalog: (N_eq, 3) tensor of earthquake locations (normalized).
+            x_coll: (N_coll, 3) tensor of collocation points for the integral.
+
+        Returns:
+            Scalar loss tensor.
+        """
+        model = self.raw_model
+
+        # Compute CFF and rate at catalog locations
+        cff_cat, sigma_n_cat = Physics.coulomb_failure(
+            self.model,
+            x_catalog,
+            lambda_p=model.pore_pressure_ratio,
+            stress_scale=S0,
+        )
+        rate_cat = Physics.seismicity_rate(
+            cff_cat,
+            sigma_n_cat,
+            model.a_param,
+            model.r0,
+        )
+
+        # Term 1: -sum(log R(x_i)) at observed earthquake locations
+        log_rate = torch.log(rate_cat.clamp(min=1e-10))
+        term1 = -torch.mean(log_rate)
+
+        # Term 2: integral of R(x) over domain (Monte Carlo)
+        cff_coll, sigma_n_coll = Physics.coulomb_failure(
+            self.model,
+            x_coll,
+            lambda_p=model.pore_pressure_ratio,
+            stress_scale=S0,
+        )
+        rate_coll = Physics.seismicity_rate(
+            cff_coll,
+            sigma_n_coll,
+            model.a_param,
+            model.r0,
+        )
+        term2 = torch.mean(rate_coll)
+
+        return term1 + term2
+
     def load_checkpoint(self, path: str) -> int:
-        """Loads model state from path and returns the epoch number."""
+        """Loads model state from path and returns the epoch number.
+        Uses strict=False to handle checkpoints missing coupling parameters."""
         print(f"Loading checkpoint from {path}...")
         checkpoint = torch.load(path, map_location=self.device)
 
         if self.multi_gpu:
-            self.model.module.load_state_dict(checkpoint)
+            self.model.module.load_state_dict(checkpoint, strict=False)
         else:
-            self.model.load_state_dict(checkpoint)
+            self.model.load_state_dict(checkpoint, strict=False)
 
         try:
             filename = Path(path).stem
@@ -149,7 +231,10 @@ class PINNTrainer:
         w_pde: float = 1.0,
         w_const: float = 1.0,
         w_bc: float = 1.0,
+        w_seis: float = 0.0,
         velocity_file: Optional[str] = None,
+        catalog_file: Optional[str] = None,
+        min_magnitude: float = 4.0,
         resume_from_checkpoint: Optional[str] = None,
     ):
         self.dataset = GPSDataset(gps_files)
@@ -162,6 +247,40 @@ class PINNTrainer:
         vel_model = None
         if spatial_dim == 3 and velocity_file:
             vel_model = VelocityModel(velocity_file, self.transformer)
+
+        # Load earthquake catalog for seismicity coupling
+        catalog_coords = None
+        if catalog_file and w_seis > 0.0 and spatial_dim == 3:
+            catalog_ds = CatalogDataset(
+                catalog_file,
+                transformer=self.transformer,
+                min_magnitude=min_magnitude,
+            )
+            if len(catalog_ds) > 0:
+                # Pre-build tensor of all catalog event coordinates
+                all_x, all_y, all_z, all_mag = [], [], [], []
+                for i in range(len(catalog_ds)):
+                    cx, cy, cz, cm = catalog_ds[i]
+                    all_x.append(cx)
+                    all_y.append(cy)
+                    all_z.append(cz)
+                    all_mag.append(cm)
+                catalog_coords = torch.stack(
+                    [
+                        torch.stack(all_x),
+                        torch.stack(all_y),
+                        # Map depth [0,1] to normalized z [-1, 0]
+                        -torch.stack(all_z),
+                    ],
+                    dim=1,
+                ).to(self.device)
+                catalog_coords.requires_grad = False
+                print(
+                    f"Loaded {len(catalog_ds)} catalog events (Mc >= {min_magnitude})"
+                )
+            else:
+                print("Warning: Catalog dataset is empty after Mc filter.")
+                w_seis = 0.0
 
         dataloader = torch.utils.data.DataLoader(
             self.dataset, batch_size=len(self.dataset), shuffle=True
@@ -182,10 +301,16 @@ class PINNTrainer:
                     f"Checkpoint {resume_from_checkpoint} not found. Starting from 0."
                 )
 
+        # Cosine annealing LR scheduler
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            self.optimizer,
+            T_max=epochs - start_epoch,
+            eta_min=1e-6,
+        )
+
         pbar = tqdm(range(start_epoch, epochs), desc="Training PINN")
         for epoch in pbar:
             self.model.train()
-            # self.optimizer.zero_grad() # Moved inside dataloader loop
 
             for x_batch, theta_batch in dataloader:
                 x_batch = x_batch.to(self.device)
@@ -208,6 +333,7 @@ class PINNTrainer:
                 total_pde = 0.0
                 total_const = 0.0
                 total_bc = 0.0
+                total_seis = 0.0
 
                 # 2. Physics Loss (Gradient Accumulation in Chunks)
                 batch_size_physics = 4096
@@ -245,10 +371,18 @@ class PINNTrainer:
                         l_const = torch.mean(res_c_xx**2 + res_c_yy**2 + res_c_xy**2)
                         l_bc = torch.tensor(0.0, device=self.device)
 
-                    # Scale loss by 1/num_batches for averaging
                     loss_chunk = (
                         w_pde * l_pde + w_const * l_const + w_bc * l_bc
                     ) / num_batches
+
+                    # 3. Seismicity coupling loss (only in 3D with catalog)
+                    l_seis = torch.tensor(0.0, device=self.device)
+                    if w_seis > 0.0 and catalog_coords is not None and spatial_dim == 3:
+                        l_seis = self.compute_seismicity_loss(
+                            catalog_coords,
+                            x_coll,
+                        )
+                        loss_chunk = loss_chunk + (w_seis * l_seis) / num_batches
 
                     loss_chunk.backward()
 
@@ -256,22 +390,30 @@ class PINNTrainer:
                     total_pde += l_pde.item()
                     total_const += l_const.item()
                     total_bc += l_bc.item()
+                    total_seis += l_seis.item()
 
-                # Step Optimizer
+                # Step Optimizer + Scheduler
                 self.optimizer.step()
 
                 # Logging Stats
                 avg_pde = total_pde / num_batches
                 avg_const = total_const / num_batches
                 avg_bc = total_bc / num_batches
+                avg_seis = total_seis / num_batches
                 current_epoch_loss += (
-                    w_pde * avg_pde + w_const * avg_const + w_bc * avg_bc
+                    w_pde * avg_pde
+                    + w_const * avg_const
+                    + w_bc * avg_bc
+                    + w_seis * avg_seis
                 )
+
+            scheduler.step()
 
             self.history["loss"].append(current_epoch_loss)
             self.history["loss_data"].append(loss_data.item())
             self.history["loss_pde"].append(avg_pde)
             self.history["loss_const"].append(avg_const)
+            self.history["loss_seis"].append(avg_seis)
             if spatial_dim == 3:
                 if "loss_bc" not in self.history:
                     self.history["loss_bc"] = []
@@ -282,6 +424,7 @@ class PINNTrainer:
                     {
                         "Loss": f"{current_epoch_loss:.4f}",
                         "Dat": f"{loss_data.item():.4f}",
+                        "Seis": f"{avg_seis:.4f}" if w_seis > 0 else "off",
                     }
                 )
 
