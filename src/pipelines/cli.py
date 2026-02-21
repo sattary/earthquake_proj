@@ -438,38 +438,16 @@ def plot_error_hist(
 ):
     """Plot histogram of GPS phase/azimuth residuals."""
     import torch
-    import numpy as np
-    from pathlib import Path
     from src.visualize.error_histogram import plot_error_histogram as plot_hist
-    from src.core.model import SpatialPINN
-    from src.data.loaders import GPSDataset
+    from src.analysis.inference import load_inference_model, compute_gps_azimuth_errors
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = SpatialPINN(spatial_dim=3).to(device)
     try:
-        model.load_state_dict(torch.load(model_path, map_location=device))
+        model = load_inference_model(model_path, device=device)
+        _, _, errors = compute_gps_azimuth_errors(model, device=device)
     except Exception as e:
-        print(f"Failed to load model: {e}")
+        print(f"Inference failed: {e}")
         return
-    model.eval()
-
-    gps_files = list(Path("data/kinematic_data").glob("gps_strain_*.csv"))
-    if not gps_files:
-        print("No GPS files found.")
-        return
-    dataset = GPSDataset([str(f) for f in gps_files])
-
-    with torch.no_grad():
-        x = dataset.coords.to(device)
-        theta_true = dataset.theta.cpu().numpy()
-        out_tensor = model(x)
-        sxx = out_tensor[:, 3].cpu().numpy()
-        syy = out_tensor[:, 4].cpu().numpy()
-        sxy = out_tensor[:, 6].cpu().numpy()
-        theta_pred = 0.5 * np.arctan2(2 * sxy, sxx - syy) + np.pi / 2
-
-    diff = theta_pred - theta_true
-    errors = np.arctan2(np.sin(diff), np.cos(diff))
 
     plot_hist(errors=errors, out_path=out, xlabel="Azimuth Error (rad)")
 
@@ -483,35 +461,16 @@ def plot_scatter(
 ):
     """Plot predicted vs true azimuth scatter."""
     import torch
-    import numpy as np
-    from pathlib import Path
     from src.visualize.prediction_scatter import plot_prediction_scatter as plot_scat
-    from src.core.model import SpatialPINN
-    from src.data.loaders import GPSDataset
+    from src.analysis.inference import load_inference_model, compute_gps_azimuth_errors
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = SpatialPINN(spatial_dim=3).to(device)
     try:
-        model.load_state_dict(torch.load(model_path, map_location=device))
+        model = load_inference_model(model_path, device=device)
+        theta_true, theta_pred, _ = compute_gps_azimuth_errors(model, device=device)
     except Exception as e:
-        print(f"Failed to load model: {e}")
+        print(f"Inference failed: {e}")
         return
-    model.eval()
-
-    gps_files = list(Path("data/kinematic_data").glob("gps_strain_*.csv"))
-    if not gps_files:
-        print("No GPS files found.")
-        return
-    dataset = GPSDataset([str(f) for f in gps_files])
-
-    with torch.no_grad():
-        x = dataset.coords.to(device)
-        theta_true = dataset.theta.cpu().numpy()
-        out_tensor = model(x)
-        sxx = out_tensor[:, 3].cpu().numpy()
-        syy = out_tensor[:, 4].cpu().numpy()
-        sxy = out_tensor[:, 6].cpu().numpy()
-        theta_pred = 0.5 * np.arctan2(2 * sxy, sxx - syy) + np.pi / 2
 
     plot_scat(
         y_true=theta_true,
@@ -532,65 +491,16 @@ def plot_cff(
 ):
     """Plot Coulomb Failure Function map."""
     import torch
-    import numpy as np
-    import pandas as pd
-    from pathlib import Path
     from src.visualize.cff_map import plot_cff_map
-    from src.core.model import SpatialPINN
-    from src.core.physics import Physics
-    from src.data.velocity import VelocityModel
-    from src.data.transformers import CoordinateTransformer as Transformer
+    from src.analysis.inference import load_inference_model, compute_cff_grid
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = SpatialPINN(spatial_dim=3, coupling_enabled=True).to(device)
     try:
-        model.load_state_dict(torch.load(model_path, map_location=device))
+        model = load_inference_model(model_path, device=device)
+        Lon, Lat, cff_np = compute_cff_grid(model, depth_km=depth, device=device)
     except Exception as e:
-        print(f"Failed to load model: {e}")
+        print(f"Inference failed: {e}")
         return
-    model.eval()
-
-    gps_files = list(Path("data/kinematic_data").glob("gps_strain_*.csv"))
-    if not gps_files:
-        print("No GPS files found. Needed for transformer limits.")
-        return
-
-    dfs = [pd.read_csv(f) for f in gps_files]
-    df = pd.concat(dfs, ignore_index=True)
-    bounds = {
-        "lon_min": df["lon"].min(),
-        "lon_max": df["lon"].max(),
-        "lat_min": df["lat"].min(),
-        "lat_max": df["lat"].max(),
-    }
-    vel_model = VelocityModel(
-        "data/Morteza_2023/Vel/Pwave.3D.txt",
-        Transformer(df["lat"].values, df["lon"].values),
-    )
-
-    res = 100
-    lon = np.linspace(bounds["lon_min"], bounds["lon_max"], res)
-    lat = np.linspace(bounds["lat_min"], bounds["lat_max"], res)
-    Lon, Lat = np.meshgrid(lon, lat)
-
-    x_norm = (Lon.flatten() - bounds["lon_min"]) / (
-        bounds["lon_max"] - bounds["lon_min"]
-    )
-    y_norm = (Lat.flatten() - bounds["lat_min"]) / (
-        bounds["lat_max"] - bounds["lat_min"]
-    )
-    z_norm = (depth - vel_model.min_dep) / (
-        vel_model.max_dep - vel_model.min_dep
-    ) * 2.0 - 1.0
-
-    pts = np.stack([x_norm, y_norm, np.full_like(x_norm, z_norm)], axis=1)
-    pts_t = torch.tensor(pts, dtype=torch.float32, device=device).requires_grad_(True)
-
-    with torch.no_grad():
-        cff_val, _ = Physics.coulomb_failure(
-            model, pts_t, lambda_p=model.pore_pressure_ratio
-        )
-        cff_np = cff_val.cpu().numpy().reshape(res, res)
 
     plot_cff_map(
         x=Lon,

@@ -2,7 +2,7 @@ import torch
 import torch.optim as optim
 from pathlib import Path
 import os
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Tuple
 from tqdm import tqdm
 
 from src.core.model import SpatialPINN
@@ -65,7 +65,9 @@ class PINNTrainer:
         }
         self.transformer = None
 
-    def compute_data_loss(self, x_batch_in, theta_batch):
+    def compute_data_loss(
+        self, x_batch_in: torch.Tensor, theta_batch: torch.Tensor
+    ) -> torch.Tensor:
         """
         Computes azimuthal co-axiality loss.
         """
@@ -86,7 +88,12 @@ class PINNTrainer:
         # Data Loss: maximize co-axiality (minimize sin^2(2*diff))
         return torch.mean(torch.sin(2 * (theta_pred - theta_batch_math)) ** 2)
 
-    def compute_physics_losses_3d(self, x_coll, x_surf, vel_model):
+    def compute_physics_losses_3d(
+        self,
+        x_coll: torch.Tensor,
+        x_surf: Optional[torch.Tensor],
+        vel_model: Optional[VelocityModel],
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Computes 3D physics residuals using the Core Physics engine.
         Supports both viscous (Stokes) and elastic (Hooke) constitutive laws.
@@ -187,7 +194,7 @@ class PINNTrainer:
         resume_from_checkpoint: Optional[str] = None,
         optuna_trial: Optional[Any] = None,
         pbar_disable: bool = False,
-    ):
+    ) -> None:
         self.dataset = GPSDataset(gps_files)
         if len(self.dataset) == 0:
             print("Error: Dataset is empty.")

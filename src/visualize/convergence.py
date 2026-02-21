@@ -43,7 +43,8 @@ def plot_convergence(
     epochs = np.arange(1, len(values) + 1)
 
     smoothed = np.convolve(values, np.ones(window) / window, mode="valid")
-    smoothed_epochs = np.arange(window // 2, len(values) - window // 2)
+    start_epoch = window // 2 + 1
+    smoothed_epochs = np.arange(start_epoch, start_epoch + len(smoothed))
 
     conv_epoch, stable_epoch = _find_convergence(smoothed, smoothed_epochs, window)
 
@@ -79,9 +80,7 @@ def plot_convergence(
         axes[0].grid(True, alpha=0.3)
 
         diff = np.abs(np.diff(smoothed))
-        axes[1].semilogy(
-            smoothed_epochs[1:], diff[1:], alpha=0.5, lw=0.5, color="#0072B2"
-        )
+        axes[1].semilogy(smoothed_epochs[1:], diff, alpha=0.5, lw=0.5, color="#0072B2")
         axes[1].set_xlabel("Epoch", fontsize=9)
         axes[1].set_ylabel(f"Δ {metric} (log)", fontsize=9)
         axes[1].grid(True, alpha=0.3)
