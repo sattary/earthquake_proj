@@ -367,18 +367,6 @@ def tune(
 
 
 @app.command()
-def audit(
-    gps_dir: str = "data/kinematic_data",
-    velocity_file: str = "data/Morteza_2023/Vel/Pwave.3D.txt",
-    output_dir: str = "results/eda",
-):
-    """
-    Perform Exploratory Data Analysis (EDA).
-    """
-    run_audit(gps_dir=gps_dir, velocity_file=velocity_file, output_dir=output_dir)
-
-
-@app.command()
 def plot_history(
     run_dir: str = typer.Option(
         "runs/current", help="Run directory containing training_history.json"
