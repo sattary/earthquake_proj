@@ -91,9 +91,21 @@ Clean the raw professor-provided datasets into consistent tensors.
 uv run earthquake-proj preprocess --input-file data/files/historical_Eq.txt
 ```
 
-### Step 2: Full 3D PINN Inversion
+### Step 2: Automated Hyperparameter Tuning & Training
 
-Execute the multi-gpu neural network training over the full magnitude of the Iranian velocity model.
+Execute multiprocessed Optuna to sweep the coupling weights (`w_seis`, `w_data`, `w_pde`). The execution will automatically drop into long-running 20,000-epoch real-world training once the best model is identified.
+
+```bash
+uv run earthquake-proj tune \
+    --n-trials 50 \
+    --tune-epochs 500 \
+    --auto-push \
+    --train-after
+```
+
+### Step 3: Manual PINN Inversion (Optional Bypass)
+
+If bypassing Optuna tuning, execute the deep multi-gpu training over the full magnitude of the Iranian velocity model.
 
 ```bash
 uv run earthquake-proj train \
