@@ -5,7 +5,7 @@ import tempfile
 import os
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 # Add project root to sys.path
 sys.path.append(os.getcwd())

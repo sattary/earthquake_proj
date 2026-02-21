@@ -6,7 +6,6 @@ from pathlib import Path
 from src.validation.synthetic_benchmark import AnalyticalBenchmark
 from src.validation.synthetic_generator import SyntheticDataGenerator
 from src.core.physics import Physics
-import src.core.model
 
 
 @pytest.fixture(scope="module")

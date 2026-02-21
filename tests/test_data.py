@@ -1,6 +1,5 @@
 import torch
 import numpy as np
-import pytest
 from src.data.transformers import CoordinateTransformer
 
 

@@ -1,6 +1,4 @@
-import torch
 import os
-import pytest
 from src.training.engine import PINNTrainer
 from src.core.model import SpatialPINN
 

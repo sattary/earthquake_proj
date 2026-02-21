@@ -1,5 +1,4 @@
 import torch
-import pytest
 from src.core.physics import Physics
 from src.core.model import SpatialPINN
 from src.core.constants import S0, V0, MU_BASELINE

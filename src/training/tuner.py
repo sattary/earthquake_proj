@@ -9,7 +9,7 @@ import sys
 import json
 import glob
 from pathlib import Path
-from typing import Optional, List, Callable, Any
+from typing import Optional, List, Any
 import copy
 import multiprocessing as mp
 import time

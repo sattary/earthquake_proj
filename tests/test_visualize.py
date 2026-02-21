@@ -3,7 +3,6 @@ Smoke tests for the visualization suite.
 """
 
 import numpy as np
-import pytest
 
 
 class TestStyleImports:
@@ -11,8 +10,6 @@ class TestStyleImports:
 
     def test_import_style(self):
         from src.visualize import (
-            nature_style,
-            save_figure,
             SINGLE_COL,
             DOUBLE_COL,
             NATURE_PALETTE,

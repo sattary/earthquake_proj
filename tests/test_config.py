@@ -3,10 +3,7 @@ Tests for the hierarchical configuration system.
 """
 
 import json
-import tempfile
-from pathlib import Path
 
-import pytest
 
 
 class TestConfigDefaults:
@@ -15,12 +12,6 @@ class TestConfigDefaults:
     def test_default_train_config(self):
         from src.core.config import (
             TrainConfig,
-            DataConfig,
-            ModelConfig,
-            OptimizationConfig,
-            LossConfig,
-            PhysicsConfig,
-            LoggingConfig,
         )
 
         cfg = TrainConfig()
@@ -46,7 +37,7 @@ class TestLoadJSONConfig:
     """Test loading from JSON config files."""
 
     def test_load_partial_json(self, tmp_path):
-        from src.core.config import load_train_config, TrainConfig
+        from src.core.config import load_train_config
 
         config_data = {
             "optim": {"epochs": 500, "lr": 1e-4},

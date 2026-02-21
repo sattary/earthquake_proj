@@ -1,5 +1,4 @@
 import torch
-import pytest
 from src.core.physics import Physics
 from src.core.model import SpatialPINN
 

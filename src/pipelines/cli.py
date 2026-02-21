@@ -539,7 +539,7 @@ def plot_cff(
     from src.core.model import SpatialPINN
     from src.core.physics import Physics
     from src.data.velocity import VelocityModel
-    from src.data.loaders import Transformer
+    from src.data.transformers import CoordinateTransformer as Transformer
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = SpatialPINN(spatial_dim=3, coupling_enabled=True).to(device)
@@ -563,7 +563,10 @@ def plot_cff(
         "lat_min": df["lat"].min(),
         "lat_max": df["lat"].max(),
     }
-    vel_model = VelocityModel("data/Morteza_2023/Vel/Pwave.3D.txt", Transformer(bounds))
+    vel_model = VelocityModel(
+        "data/Morteza_2023/Vel/Pwave.3D.txt",
+        Transformer(df["lat"].values, df["lon"].values),
+    )
 
     res = 100
     lon = np.linspace(bounds["lon_min"], bounds["lon_max"], res)
@@ -624,6 +627,150 @@ def results_suite(
     plot_cff(model_path=model_path, depth=15.0, out="results/figs/cff_map.png")
 
     print("Visualization Suite Complete. Check results/figs/ directory.")
+
+
+@app.command()
+def plot_optuna(
+    db_path: str = typer.Option(
+        "results/optuna/earthquake_pinn_hpo.db", help="Path to Optuna SQLite DB"
+    ),
+    study_name: str = typer.Option("earthquake_pinn_hpo", help="Study name"),
+    out_dir: str = typer.Option("results/figs", help="Output directory"),
+):
+    """Generate interactive Optuna diagnostics (F-ANOVA, Parallel Coordinates)."""
+    from src.visualize.optuna_diagnostics import generate_optuna_diagnostics
+
+    generate_optuna_diagnostics(db_path, study_name, out_dir)
+
+
+@app.command()
+def plot_3d_hero(
+    model_path: str = typer.Option(
+        "checkpoints/final_model.pth", help="Path to trained model weights"
+    ),
+    out: str = typer.Option(
+        "results/figs/volumetric_hero.html",
+        help="Output path (HTML and PNG will be generated)",
+    ),
+):
+    """Generate 3D Volumetric Fault and Residuals visualization via PyVista."""
+    from src.visualize.volumetric_hero import plot_3d_fault_residuals
+
+    # Explicitly enforce CPU for visualizer decoupling
+    plot_3d_fault_residuals(model_path, out, device="cpu")
+
+
+@app.command()
+def plot_misfit(
+    model_path: str = typer.Option(
+        "checkpoints/final_model.pth", help="Path to trained model weights"
+    ),
+    out: str = typer.Option("results/figs/misfit_map.png", help="Output path"),
+):
+    """Generate geographic map of True vs Predicted GPS vectors with misfit heatmap."""
+    from src.visualize.misfit_map import plot_misfit_map
+
+    plot_misfit_map(model_path, out, device="cpu")
+
+
+@app.command()
+def plot_progression(
+    checkpoint_dir: str = typer.Option(
+        "checkpoints", help="Directory containing checkpoint epochs"
+    ),
+    depth: float = typer.Option(15.0, help="Depth for CFF calculation (km)"),
+    out: str = typer.Option("results/figs/cff_progression.png", help="Output path"),
+):
+    """Generate multi-epoch CFF progression snapshots."""
+    import glob
+    from src.visualize.progression_plot import plot_cff_progression
+
+    ckpts = sorted(glob.glob(f"{checkpoint_dir}/checkpoint_epoch_*.pth"))
+    # Grab first, middle, last
+    target_ckpts = []
+    if len(ckpts) >= 3:
+        target_ckpts = [ckpts[0], ckpts[len(ckpts) // 2], ckpts[-1]]
+    else:
+        target_ckpts = ckpts
+
+    if not target_ckpts:
+        print("No checkpoints found for progression plot.")
+        return
+
+    plot_cff_progression(target_ckpts, depth, out, device="cpu")
+
+
+@app.command()
+def plot_all_local(
+    run_dir: str = typer.Option(
+        ".", help="Path to the downloaded cloud artifacts directory"
+    ),
+):
+    """
+    Master command: Loads downloaded cloud payload and generates ALL publication figures locally on CPU.
+    Requires: 'checkpoints/final_model.pth' and 'runs/current/training_history.json' inside run_dir.
+    """
+    from pathlib import Path
+
+    base_dir = Path(run_dir)
+    res_dir = base_dir / "final_figures"
+    res_dir.mkdir(parents=True, exist_ok=True)
+
+    model_path = str(base_dir / "checkpoints/final_model.pth")
+    history_dir = str(base_dir / "runs/current")
+    db_path = str(base_dir / "results/optuna/earthquake_pinn_hpo.db")
+
+    if not Path(model_path).exists():
+        print(
+            f"Error: Could not find model at {model_path}. Did you specify the correct --run-dir?"
+        )
+        return
+
+    print("\\n--- Starting Local Visualization Engine (CPU) ---")
+    print(f"Target Output: {res_dir}\\n")
+
+    try:
+        # 1. Base Metrics
+        print("[1/6] Generating History & Convergence...")
+        plot_history(run_dir=history_dir, out=str(res_dir / "loss_history.png"))
+        plot_convergence(run_dir=history_dir, out=str(res_dir / "convergence.png"))
+
+        # 2. Vector & Azimuth Accuracies
+        print("[2/6] Generating Scatters & Misfit Maps...")
+        plot_error_hist(model_path=model_path, out=str(res_dir / "error_hist.png"))
+        plot_scatter(model_path=model_path, out=str(res_dir / "scatter.png"))
+        plot_misfit(model_path=model_path, out=str(res_dir / "misfit_map.png"))
+
+        # 3. Physics & Progression
+        print("[3/6] Generating CFF Physics Maps...")
+        plot_cff(
+            model_path=model_path, depth=15.0, out=str(res_dir / "cff_map_15km.png")
+        )
+        plot_progression(
+            checkpoint_dir=str(base_dir / "checkpoints"),
+            depth=15.0,
+            out=str(res_dir / "cff_progression.png"),
+        )
+
+        # 4. Spatiotemporal Hero Plot
+        print("[4/6] Generating 3D Volumetric Hero Plot (PyVista)...")
+        plot_3d_hero(model_path=model_path, out=str(res_dir / "volumetric_hero.html"))
+
+        # 5. Optuna Diagnostics
+        print("[5/6] Generating Optuna Diagnostics...")
+        if Path(db_path).exists():
+            plot_optuna(
+                db_path=db_path, study_name="earthquake_pinn_hpo", out_dir=str(res_dir)
+            )
+        else:
+            print(f"Skipping Optuna (No DB found at {db_path})")
+
+        print(
+            "\\n✅ Local Plotting Complete! All publication figures are in 'final_figures/'."
+        )
+
+    except Exception as e:
+        print(f"\\n❌ Visualization Pipeline Interrupted: {e}")
 
 
 @app.command()
