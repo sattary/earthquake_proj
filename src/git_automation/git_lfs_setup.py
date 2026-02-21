@@ -1,5 +1,4 @@
 import subprocess
-import os
 from .environment import get_environment_name
 
 

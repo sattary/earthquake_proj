@@ -12,7 +12,6 @@ from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
 
 from src.visualize.style import (
     nature_style,

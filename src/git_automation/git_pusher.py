@@ -1,6 +1,5 @@
 import os
 import subprocess
-import shutil
 from typing import Optional, Dict
 from .environment import get_environment_name
 

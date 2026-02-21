@@ -1,6 +1,5 @@
 import os
 from typing import Optional, Callable
-import typer
 
 from .callback import AutoPushCallback
 from .environment import is_cloud_environment

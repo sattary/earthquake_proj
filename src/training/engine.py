@@ -2,7 +2,7 @@ import torch
 import torch.optim as optim
 from pathlib import Path
 import os
-from typing import List, Optional, Dict
+from typing import List, Optional
 from tqdm import tqdm
 
 from src.core.model import SpatialPINN

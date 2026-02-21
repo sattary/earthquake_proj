@@ -200,9 +200,9 @@ def config_to_yaml(cfg: TrainConfig) -> str:
 
     cfg_dict = asdict(cfg)
 
-    config_file = cfg_dict.pop("config_file", None)
-    resume = cfg_dict.pop("resume", None)
-    multi_gpu = cfg_dict.pop("multi_gpu", None)
+    cfg_dict.pop("config_file", None)
+    cfg_dict.pop("resume", None)
+    cfg_dict.pop("multi_gpu", None)
 
     return yaml.dump(cfg_dict, default_flow_style=False, sort_keys=False)
 

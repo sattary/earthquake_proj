@@ -267,7 +267,7 @@ def train(
             def extract_epoch(p):
                 try:
                     return int(os.path.splitext(os.path.basename(p))[0].split("_")[-1])
-                except:
+                except Exception:
                     return -1
 
             latest_checkpoint = max(checkpoints, key=extract_epoch)
@@ -527,7 +527,6 @@ def plot_cff(
     if not gps_files:
         print("No GPS files found. Needed for transformer limits.")
         return
-    import pandas as pd
 
     dfs = [pd.read_csv(f) for f in gps_files]
     df = pd.concat(dfs, ignore_index=True)

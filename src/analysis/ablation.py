@@ -44,7 +44,7 @@ def run_physical_ablation(
     with open(out_path, "w") as f:
         json.dump(results, f, indent=4)
 
-    print(f"\n✅ Ablation Study Complete.")
+    print("\n✅ Ablation Study Complete.")
     print(f"Uncoupled L2 Error : {uncoupled_res['l2_error'] * 100:.2f}%")
     print(f"Coupled   L2 Error : {coupled_res['l2_error'] * 100:.2f}%")
     print(f"Saved logs to {out_file}")

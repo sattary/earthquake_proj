@@ -1,5 +1,4 @@
 import os
-import time
 from typing import Optional, Dict
 from datetime import datetime
 
@@ -110,7 +109,7 @@ class AutoPushCallback:
                 )
             else:
                 print(
-                    f"[AutoPush Error] Failed to push artifacts. Training will continue."
+                    "[AutoPush Error] Failed to push artifacts. Training will continue."
                 )
 
             return success
@@ -122,7 +121,7 @@ class AutoPushCallback:
 
     def on_train_end(self, final_metrics: Dict[str, float]) -> bool:
         """Called when training completely finishes."""
-        print(f"\n[AutoPush] Training complete. Triggering final artifacts push...")
+        print("\n[AutoPush] Training complete. Triggering final artifacts push...")
 
         state = self.tracker.read_state()
         epoch = state.get("total_epochs", 1) if state else 1

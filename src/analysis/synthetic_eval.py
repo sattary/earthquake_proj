@@ -1,6 +1,4 @@
 import torch
-import numpy as np
-import pandas as pd
 from typing import Dict
 from pathlib import Path
 from unittest.mock import patch
@@ -109,7 +107,7 @@ def evaluate_synthetic_recovery(
 
     rel_error = (diff_norm / gt_norm).item()
 
-    print(f"\n--- Synthetic Evaluation Result ---")
+    print("\n--- Synthetic Evaluation Result ---")
     print(f"Regime: {regime}")
     print(f"Stations: {num_gps}, Noise: {noise_std}°")
     print(f"L2 Stress Error: {rel_error * 100:.2f}%\n")

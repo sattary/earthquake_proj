@@ -89,7 +89,7 @@ class StateTracker:
             return True
 
         # We allow intervals to change, but total epochs shouldn't shrink below current
-        recorded_total = state.get("total_epochs", expected_total)
+        state.get("total_epochs", expected_total)
         recorded_epoch = state.get("epoch", 0)
 
         return recorded_epoch <= expected_total

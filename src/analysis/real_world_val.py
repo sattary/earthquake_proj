@@ -88,7 +88,7 @@ def evaluate_against_focal_mechanisms(
     mae = np.mean(angular_errors)
     std = np.std(angular_errors)
 
-    print(f"\n--- Focal Mechanism Validation ---")
+    print("\n--- Focal Mechanism Validation ---")
     print(f"Mean Angular Error : {mae:.2f}° ± {std:.2f}°")
     print(f"Max Error          : {np.max(angular_errors):.2f}°")
 

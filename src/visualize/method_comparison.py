@@ -6,7 +6,7 @@ Compares multiple methods with error bars and statistical significance brackets.
 
 from __future__ import annotations
 
-from typing import Optional, Dict, List
+from typing import Optional, Dict
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -50,7 +50,7 @@ def plot_method_comparison(
         palette = create_nature_palette(n_methods)
         x_pos = np.arange(n_methods)
 
-        bars = ax.bar(
+        ax.bar(
             x_pos,
             means,
             yerr=stds,

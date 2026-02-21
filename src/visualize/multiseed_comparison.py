@@ -12,7 +12,6 @@ from typing import Optional, List, Dict
 
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
 
 from src.visualize.style import nature_style, save_figure, SINGLE_COL
 

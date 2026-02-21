@@ -1,7 +1,7 @@
 import os
 import zipfile
 import glob
-from typing import Optional, List
+from typing import Optional
 
 
 class ZipPacker:

@@ -15,7 +15,6 @@ from src.visualize.style import (
     nature_style,
     save_figure,
     SINGLE_COL,
-    DOUBLE_COL,
     add_colorbar,
     CMAP_ERROR_SIGNED,
 )
