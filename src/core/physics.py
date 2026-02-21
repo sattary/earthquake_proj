@@ -22,15 +22,9 @@ class Physics:
         sxy = out[:, 4]
 
         # Gradients wrt NORMALIZED coordinates
-        grads_sxx = torch.autograd.grad(
-            sxx, x, grad_outputs=torch.ones_like(sxx), create_graph=True
-        )[0]
-        grads_syy = torch.autograd.grad(
-            syy, x, grad_outputs=torch.ones_like(syy), create_graph=True
-        )[0]
-        grads_sxy = torch.autograd.grad(
-            sxy, x, grad_outputs=torch.ones_like(sxy), create_graph=True
-        )[0]
+        grads_sxx = torch.autograd.grad(sxx.sum(), x, create_graph=True)[0]
+        grads_syy = torch.autograd.grad(syy.sum(), x, create_graph=True)[0]
+        grads_sxy = torch.autograd.grad(sxy.sum(), x, create_graph=True)[0]
 
         dsxx_dx = grads_sxx[:, 0]
         dsyy_dy = grads_syy[:, 1]
@@ -56,12 +50,8 @@ class Physics:
         syy = out[:, 3]
         sxy = out[:, 4]
 
-        grads_vx = torch.autograd.grad(
-            vx, x, grad_outputs=torch.ones_like(vx), create_graph=True
-        )[0]
-        grads_vy = torch.autograd.grad(
-            vy, x, grad_outputs=torch.ones_like(vy), create_graph=True
-        )[0]
+        grads_vx = torch.autograd.grad(vx.sum(), x, create_graph=True)[0]
+        grads_vy = torch.autograd.grad(vy.sum(), x, create_graph=True)[0]
 
         dvx_dx = grads_vx[:, 0]
         dvx_dy = grads_vx[:, 1]
@@ -97,9 +87,7 @@ class Physics:
         sxz = out[:, 8] * stress_scale
 
         def get_grads(tensor, inputs):
-            return torch.autograd.grad(
-                tensor, inputs, grad_outputs=torch.ones_like(tensor), create_graph=True
-            )[0]
+            return torch.autograd.grad(tensor.sum(), inputs, create_graph=True)[0]
 
         grads_sxx = get_grads(sxx, x)
         grads_syy = get_grads(syy, x)
@@ -156,9 +144,7 @@ class Physics:
         sxz = out[:, 8] * stress_scale
 
         def get_grads(tensor, inputs):
-            return torch.autograd.grad(
-                tensor, inputs, grad_outputs=torch.ones_like(tensor), create_graph=True
-            )[0]
+            return torch.autograd.grad(tensor.sum(), inputs, create_graph=True)[0]
 
         grads_vx = get_grads(vx, x)
         grads_vy = get_grads(vy, x)
@@ -266,13 +252,8 @@ class Physics:
 
         # Build symmetric 3x3 stress tensor for each point: (N, 3, 3)
         stress_tensor = torch.stack(
-            [
-                torch.stack([sxx, sxy, sxz], dim=-1),
-                torch.stack([sxy, syy, syz], dim=-1),
-                torch.stack([sxz, syz, szz], dim=-1),
-            ],
-            dim=-2,
-        )
+            [sxx, sxy, sxz, sxy, syy, syz, sxz, syz, szz], dim=-1
+        ).view(-1, 3, 3)
 
         # Differentiable eigenvalue decomposition (sorted ascending)
         eigvals = torch.linalg.eigvalsh(stress_tensor)  # (N, 3)
@@ -372,12 +353,7 @@ class Physics:
         sxz = out[:, 8] * stress_scale
 
         def get_grads(tensor, inputs):
-            return torch.autograd.grad(
-                tensor,
-                inputs,
-                grad_outputs=torch.ones_like(tensor),
-                create_graph=True,
-            )[0]
+            return torch.autograd.grad(tensor.sum(), inputs, create_graph=True)[0]
 
         grads_ux = get_grads(ux, x)
         grads_uy = get_grads(uy, x)

@@ -16,10 +16,8 @@ class GPSDataset(Dataset):
         Args:
             csv_files (list): List of paths to GPS CSV files.
         """
-        self.data = pd.DataFrame()
-        for f in csv_files:
-            df = pd.read_csv(f)
-            self.data = pd.concat([self.data, df], ignore_index=True)
+        dfs = [pd.read_csv(f) for f in csv_files]
+        self.data = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
         # Init Transformer
         self.transformer = CoordinateTransformer(

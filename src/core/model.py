@@ -16,9 +16,7 @@ class FourierFeature(nn.Module):
         super().__init__()
         self.input_dim = input_dim
         self.mapping_size = mapping_size
-        self.B = nn.Parameter(
-            torch.randn(input_dim, mapping_size) * scale, requires_grad=False
-        )
+        self.register_buffer("B", torch.randn(input_dim, mapping_size) * scale)
 
     def forward(self, x):
         # x is (batch, input_dim) -> (batch, mapping_size)

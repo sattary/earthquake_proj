@@ -154,58 +154,6 @@ class PINNTrainer:
 
         return loss_pde, loss_const, loss_bc
 
-    def compute_seismicity_loss(self, x_catalog, x_coll):
-        """
-        Compute the Poisson negative log-likelihood seismicity coupling loss.
-
-        Rationale: The earthquake catalog is a point process. The natural
-        loss is -sum(log R(x_i)) + integral(R(x)) where the integral
-        is approximated by Monte Carlo over collocation points.
-
-        Args:
-            x_catalog: (N_eq, 3) tensor of earthquake locations (normalized).
-            x_coll: (N_coll, 3) tensor of collocation points for the integral.
-
-        Returns:
-            Scalar loss tensor.
-        """
-        model = self.raw_model
-
-        # Compute CFF and rate at catalog locations
-        cff_cat, sigma_n_cat = Physics.coulomb_failure(
-            self.model,
-            x_catalog,
-            lambda_p=model.pore_pressure_ratio,
-            stress_scale=S0,
-        )
-        rate_cat = Physics.seismicity_rate(
-            cff_cat,
-            sigma_n_cat,
-            model.a_param,
-            model.r0,
-        )
-
-        # Term 1: -sum(log R(x_i)) at observed earthquake locations
-        log_rate = torch.log(rate_cat.clamp(min=1e-10))
-        term1 = -torch.mean(log_rate)
-
-        # Term 2: integral of R(x) over domain (Monte Carlo)
-        cff_coll, sigma_n_coll = Physics.coulomb_failure(
-            self.model,
-            x_coll,
-            lambda_p=model.pore_pressure_ratio,
-            stress_scale=S0,
-        )
-        rate_coll = Physics.seismicity_rate(
-            cff_coll,
-            sigma_n_coll,
-            model.a_param,
-            model.r0,
-        )
-        term2 = torch.mean(rate_coll)
-
-        return term1 + term2
-
     def load_checkpoint(self, path: str) -> int:
         """Loads model state from path and returns the epoch number.
         Uses strict=False to handle checkpoints missing coupling parameters."""
@@ -260,20 +208,13 @@ class PINNTrainer:
                 min_magnitude=min_magnitude,
             )
             if len(catalog_ds) > 0:
-                # Pre-build tensor of all catalog event coordinates
-                all_x, all_y, all_z, all_mag = [], [], [], []
-                for i in range(len(catalog_ds)):
-                    cx, cy, cz, cm = catalog_ds[i]
-                    all_x.append(cx)
-                    all_y.append(cy)
-                    all_z.append(cz)
-                    all_mag.append(cm)
+                # Pre-build tensor of all catalog event coordinates via vectorization
                 catalog_coords = torch.stack(
                     [
-                        torch.stack(all_x),
-                        torch.stack(all_y),
+                        torch.as_tensor(catalog_ds.coords[:, 0], dtype=torch.float32),
+                        torch.as_tensor(catalog_ds.coords[:, 1], dtype=torch.float32),
                         # Map depth [0,1] to normalized z [-1, 0]
-                        -torch.stack(all_z),
+                        -torch.as_tensor(catalog_ds.depth_norm, dtype=torch.float32),
                     ],
                     dim=1,
                 ).to(self.device)
@@ -329,12 +270,12 @@ class PINNTrainer:
 
                 # Prepare Data Batch (Add surface depth if 3D)
                 if spatial_dim == 3:
-                    z_surf = -1.0 * torch.ones(x_batch.shape[0], 1, device=self.device)
+                    z_surf = torch.full((x_batch.shape[0], 1), -1.0, device=self.device)
                     x_batch_in = torch.cat([x_batch, z_surf], dim=1)
                 else:
                     x_batch_in = x_batch
 
-                self.optimizer.zero_grad()
+                self.optimizer.zero_grad(set_to_none=True)
 
                 # 1. Data Loss (Full Batch - small enough)
                 loss_data = self.compute_data_loss(x_batch_in, theta_batch)
@@ -346,9 +287,26 @@ class PINNTrainer:
                 total_bc = 0.0
                 total_seis = 0.0
 
+                l_seis_term1_val = 0.0
+                if w_seis > 0.0 and catalog_coords is not None and spatial_dim == 3:
+                    # Compute Term 1 (Catalog Error) ONCE per GPS batch
+                    cff_cat, sigma_n_cat = Physics.coulomb_failure(
+                        self.model,
+                        catalog_coords,
+                        lambda_p=self.raw_model.pore_pressure_ratio,
+                        stress_scale=S0,
+                    )
+                    rate_cat = Physics.seismicity_rate(
+                        cff_cat, sigma_n_cat, self.raw_model.a_param, self.raw_model.r0
+                    )
+                    term1 = -torch.mean(torch.log(rate_cat.clamp(min=1e-10)))
+                    (w_seis * term1).backward()
+                    l_seis_term1_val = term1.item()
+
                 # 2. Physics Loss (Gradient Accumulation in Chunks)
                 batch_size_physics = 4096
                 num_batches = (n_coll + batch_size_physics - 1) // batch_size_physics
+                total_seis += l_seis_term1_val * num_batches
 
                 for _ in range(num_batches):
                     # Generate mini-batch of collocation points
@@ -389,10 +347,19 @@ class PINNTrainer:
                     # 3. Seismicity coupling loss (only in 3D with catalog)
                     l_seis = torch.tensor(0.0, device=self.device)
                     if w_seis > 0.0 and catalog_coords is not None and spatial_dim == 3:
-                        l_seis = self.compute_seismicity_loss(
-                            catalog_coords,
+                        cff_coll, sigma_n_coll = Physics.coulomb_failure(
+                            self.model,
                             x_coll,
+                            lambda_p=self.raw_model.pore_pressure_ratio,
+                            stress_scale=S0,
                         )
+                        rate_coll = Physics.seismicity_rate(
+                            cff_coll,
+                            sigma_n_coll,
+                            self.raw_model.a_param,
+                            self.raw_model.r0,
+                        )
+                        l_seis = torch.mean(rate_coll)
                         loss_chunk = loss_chunk + (w_seis * l_seis) / num_batches
 
                     loss_chunk.backward()
