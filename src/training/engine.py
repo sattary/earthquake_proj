@@ -238,6 +238,7 @@ class PINNTrainer:
         min_magnitude: float = 4.0,
         resume_from_checkpoint: Optional[str] = None,
         optuna_trial: Optional[Any] = None,
+        pbar_disable: bool = False,
     ):
         self.dataset = GPSDataset(gps_files)
         if len(self.dataset) == 0:
@@ -313,7 +314,12 @@ class PINNTrainer:
         if self.auto_push_callback:
             self.auto_push_callback.initialize()
 
-        pbar = tqdm(range(start_epoch, epochs), desc="Training PINN")
+        pbar = tqdm(
+            range(start_epoch, epochs),
+            desc="Training PINN",
+            disable=pbar_disable,
+            leave=False,
+        )
         for epoch in pbar:
             self.model.train()
 

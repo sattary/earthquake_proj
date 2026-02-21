@@ -157,13 +157,22 @@ class GitPusher:
         if os.path.exists(state_file):
             self._run_cmd(f"git add {state_file}")
 
-        # Create commit message
-        status = "Final" if is_final else "Progress"
-        metric_str = ", ".join(f"{k}: {v:.4f}" for k, v in metrics.items())
-        msg = f"{status}: Epoch {epoch}/{total_epochs} | {metric_str}"
+        # Build commit message (match ali_proj style)
+        progress = f"{epoch}/{total_epochs}"
+        progress_pct = f"({100 * epoch / total_epochs:.1f}%)"
 
-        print(f"[{self.env_name}] Committing: {msg}")
-        success, _ = self._run_cmd(f"git commit -m '{msg}'")
+        # Pull metric string if available
+        metric_str = ""
+        if metrics:
+            metric_str = f" - Loss: {list(metrics.values())[0]:.4f}"
+
+        final_tag = " [FINAL]" if is_final else ""
+        commit_msg = (
+            f"Auto-push: Epoch {progress} {progress_pct}{metric_str}{final_tag}"
+        )
+
+        print(f"[{self.env_name}] Committing: {commit_msg}")
+        success, _ = self._run_cmd(f"git commit -m '{commit_msg}'")
 
         # It's fine if there are no changes to commit
         if not success and "nothing to commit" not in _:

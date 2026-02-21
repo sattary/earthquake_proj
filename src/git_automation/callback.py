@@ -23,6 +23,7 @@ class AutoPushCallback:
         force: bool = False,
         include_checkpoints: bool = True,
         repo_dir: str = ".",
+        branch_prefix: str = "results/",
     ):
         self.run_dir = os.path.abspath(run_dir)
         self.push_interval = push_interval
@@ -40,7 +41,7 @@ class AutoPushCallback:
         # Unique branch name for this run based on start time
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_name = os.path.basename(self.run_dir)
-        branch_name = f"results/{run_name}_{timestamp}"
+        branch_name = f"{branch_prefix}{run_name}_{timestamp}"
 
         self.pusher = GitPusher(
             repo_dir=self.repo_dir,
