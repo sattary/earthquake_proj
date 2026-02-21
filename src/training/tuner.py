@@ -9,7 +9,8 @@ import sys
 import json
 import glob
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Callable, Any
+import copy
 import multiprocessing as mp
 import time
 
@@ -20,6 +21,7 @@ from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
 
 from src.training.engine import PINNTrainer
+from src.core.config import save_train_config
 
 
 def _log(msg: str) -> None:
@@ -151,6 +153,8 @@ def run_tuning(
     multi_gpu: bool = False,
     constitutive: str = "viscous",
     coupling_enabled: bool = False,
+    base_cfg: Optional[Any] = None,
+    auto_push_callback: Optional[Any] = None,
 ):
     """
     Entry point for hyperparameter sweeps.
@@ -180,72 +184,71 @@ def run_tuning(
     remaining = n_trials - len(study.trials)
     if remaining <= 0:
         print(f"Study already has {len(study.trials)} trials. Optimization complete!")
-        return study
-
-    print(
-        f"Running {remaining} trials ({len(study.trials)} existing, {n_trials} target)."
-    )
-
-    # Hardware Detection
-    n_workers = 1
-    gpu_ids = [0]
-    if multi_gpu and torch.cuda.device_count() > 1:
-        n_workers = torch.cuda.device_count()
-        gpu_ids = list(range(n_workers))
-
-    if n_workers > 1:
-        n_workers = min(n_workers, remaining)
-        trials_per_worker = remaining // n_workers
-        extra_trials = remaining % n_workers
-
-        print(
-            f"Parallel HPO: Spawning {n_workers} objective workers across GPUs {gpu_ids}"
-        )
-
-        # Crucial for PyTorch CUDA capability in detached forks
-        mp.set_start_method("spawn", force=True)
-
-        processes = []
-        for i, gpu_id in enumerate(gpu_ids[:n_workers]):
-            worker_trials = trials_per_worker + (1 if i < extra_trials else 0)
-            p = mp.Process(
-                target=_run_trial_worker,
-                args=(
-                    gpu_id,
-                    gps_files,
-                    epochs,
-                    spatial_dim,
-                    velocity_file,
-                    constitutive,
-                    coupling_enabled,
-                    study_name,
-                    storage,
-                    worker_trials,
-                    i,
-                    n_trials,
-                ),
-            )
-            p.start()
-            processes.append(p)
-
-        # Await completion
-        for p in processes:
-            p.join()
-
-        # Update core state from workers
-        study = optuna.load_study(study_name=study_name, storage=storage)
     else:
-        # Standard Fallback
-        print("Running HPO sequentially on main process.")
-        objective = _create_objective(
-            gps_files,
-            epochs,
-            spatial_dim,
-            velocity_file,
-            constitutive,
-            coupling_enabled,
+        print(
+            f"Running {remaining} trials ({len(study.trials)} existing, {n_trials} target)."
         )
-        study.optimize(objective, n_trials=remaining, show_progress_bar=True)
+
+        # Hardware Detection
+        n_workers = 1
+        gpu_ids = [0]
+        if multi_gpu and torch.cuda.device_count() > 1:
+            n_workers = torch.cuda.device_count()
+            gpu_ids = list(range(n_workers))
+
+        if n_workers > 1:
+            n_workers = min(n_workers, remaining)
+            trials_per_worker = remaining // n_workers
+            extra_trials = remaining % n_workers
+
+            print(
+                f"Parallel HPO: Spawning {n_workers} objective workers across GPUs {gpu_ids}"
+            )
+
+            # Crucial for PyTorch CUDA capability in detached forks
+            mp.set_start_method("spawn", force=True)
+
+            processes = []
+            for i, gpu_id in enumerate(gpu_ids[:n_workers]):
+                worker_trials = trials_per_worker + (1 if i < extra_trials else 0)
+                p = mp.Process(
+                    target=_run_trial_worker,
+                    args=(
+                        gpu_id,
+                        gps_files,
+                        epochs,
+                        spatial_dim,
+                        velocity_file,
+                        constitutive,
+                        coupling_enabled,
+                        study_name,
+                        storage,
+                        worker_trials,
+                        i,
+                        n_trials,
+                    ),
+                )
+                p.start()
+                processes.append(p)
+
+            # Await completion
+            for p in processes:
+                p.join()
+
+            # Update core state from workers
+            study = optuna.load_study(study_name=study_name, storage=storage)
+        else:
+            # Standard Fallback
+            print("Running HPO sequentially on main process.")
+            objective = _create_objective(
+                gps_files,
+                epochs,
+                spatial_dim,
+                velocity_file,
+                constitutive,
+                coupling_enabled,
+            )
+            study.optimize(objective, n_trials=remaining, show_progress_bar=True)
 
     completed_trials = [
         t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE
@@ -268,9 +271,27 @@ def run_tuning(
     with open("results/tables/best_params.json", "w") as f:
         json.dump(study.best_trial.params, f, indent=4)
 
-    print(
-        "Saved best params to results/tables/best_params.json and study to SQLite DB."
-    )
+    print("Saved best params to best_params.json and study to SQLite DB.")
+
+    if base_cfg is not None:
+        best_cfg = copy.deepcopy(base_cfg)
+        best_cfg.optim.lr = study.best_params["lr"]
+        best_cfg.loss.w_pde = study.best_params["w_pde"]
+        best_cfg.loss.w_const = study.best_params["w_const"]
+        best_cfg.loss.w_bc = study.best_params["w_bc"]
+        best_cfg.model.fourier_scale = study.best_params["f_tune"]
+
+        best_config_path = str(optuna_dir / "best_config.yaml")
+
+        save_train_config(best_cfg, best_config_path)
+        print(f"Exported best config to: {best_config_path}")
+
+    if auto_push_callback is not None:
+        try:
+            print("Triggering auto-push callback...")
+            auto_push_callback()
+        except Exception as e:
+            print(f"Auto-push callback failed: {e}")
 
 
 if __name__ == "__main__":

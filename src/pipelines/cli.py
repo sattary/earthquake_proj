@@ -327,6 +327,16 @@ def tune(
         "--constitutive",
         help="Constitutive law: 'viscous' or 'elastic' (overrides config)",
     ),
+    auto_push: bool = typer.Option(
+        False,
+        "--auto-push",
+        help="Enable async push to GitHub after tuning",
+    ),
+    train_after: bool = typer.Option(
+        False,
+        "--train-after",
+        help="Run main training with best config immediately after tuning",
+    ),
 ):
     """
     Run Hyperparameter Tuning.
@@ -355,6 +365,17 @@ def tune(
         print("[Auto-Detect] Kaggle multi-GPU detected. Enabling multi-GPU mode.")
         cfg.multi_gpu = True
 
+    auto_push_cb = None
+    if auto_push:
+        auto_push_cb = create_auto_push_callback(
+            run_dir=".",
+            interval=1000000,
+            dry_run=False,
+            force=False,
+            pat=None,
+            include_checkpoints=False,
+        )
+
     run_tuning(
         n_trials=trials or 20,
         epochs=epochs or cfg.optim.epochs,
@@ -363,7 +384,25 @@ def tune(
         multi_gpu=cfg.multi_gpu,
         constitutive=cfg.physics.constitutive,
         coupling_enabled=cfg.physics.coupling_enabled,
+        base_cfg=cfg,
+        auto_push_callback=auto_push_cb,
     )
+
+    if train_after:
+        import subprocess
+
+        print("\n[Auto-Train] Launching main training with best Optuna config...")
+        cmd = [
+            "uv",
+            "run",
+            "earthquake-proj",
+            "train",
+            "--config",
+            "results/optuna/best_config.yaml",
+        ]
+        if auto_push:
+            cmd.append("--auto-push")
+        subprocess.run(cmd)
 
 
 @app.command()
