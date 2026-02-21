@@ -2,7 +2,7 @@ import torch
 import torch.optim as optim
 from pathlib import Path
 import os
-from typing import List, Optional
+from typing import List, Optional, Any
 from tqdm import tqdm
 
 from src.core.model import SpatialPINN
@@ -237,6 +237,7 @@ class PINNTrainer:
         catalog_file: Optional[str] = None,
         min_magnitude: float = 4.0,
         resume_from_checkpoint: Optional[str] = None,
+        optuna_trial: Optional[Any] = None,
     ):
         self.dataset = GPSDataset(gps_files)
         if len(self.dataset) == 0:
@@ -431,6 +432,13 @@ class PINNTrainer:
                         "Seis": f"{avg_seis:.4f}" if w_seis > 0 else "off",
                     }
                 )
+
+            if optuna_trial is not None:
+                optuna_trial.report(current_epoch_loss, epoch)
+                if optuna_trial.should_prune():
+                    import optuna
+
+                    raise optuna.TrialPruned()
 
             if self.auto_push_callback:
                 metrics = {

@@ -11,7 +11,7 @@ from typing import Optional
 
 from src.training.engine import PINNTrainer
 from src.training.tuner import run_tuning
-from src.pipelines.eda import audit as run_audit
+
 from src.core.config import load_train_config, save_train_config, TrainConfig
 from src.git_automation import add_auto_push_args, create_auto_push_callback
 from src.training.multi_gpu import detect_kaggle_multi_gpu
