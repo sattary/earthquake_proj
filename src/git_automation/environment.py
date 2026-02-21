@@ -13,7 +13,11 @@ def is_kaggle() -> bool:
 
 def is_colab() -> bool:
     """Detect if running in Google Colab environment."""
-    return "google.colab" in sys.modules
+    return (
+        "google.colab" in sys.modules
+        or "COLAB_GPU" in os.environ
+        or "COLAB_RELEASE_TAG" in os.environ
+    )
 
 
 def is_cloud_environment() -> bool:
@@ -23,10 +27,10 @@ def is_cloud_environment() -> bool:
 
 def get_environment_name() -> str:
     """Get the name of the current environment."""
-    if is_kaggle():
-        return "kaggle"
-    elif is_colab():
+    if is_colab():
         return "colab"
+    elif is_kaggle():
+        return "kaggle"
     else:
         return "local"
 
