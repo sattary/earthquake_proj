@@ -277,7 +277,7 @@ class PINNTrainer:
 
                 # Prepare Data Batch (Add surface depth if 3D)
                 if spatial_dim == 3:
-                    z_surf = torch.full((x_batch.shape[0], 1), -1.0, device=self.device)
+                    z_surf = torch.full((x_batch.shape[0], 1), 0.0, device=self.device)
                     x_batch_in = torch.cat([x_batch, z_surf], dim=1)
                 else:
                     x_batch_in = x_batch
@@ -325,13 +325,13 @@ class PINNTrainer:
 
                     x_surf = None
                     if spatial_dim == 3:
-                        x_coll[:, 2] = x_coll[:, 2] * 2.0 - 1.0
+                        x_coll[:, 2] = -x_coll[:, 2]
                         # Surface points proportional to volume points
                         n_surf = batch_size_physics // 4
                         x_surf = torch.rand(n_surf, 3, device=self.device)
                         x_surf[:, 0] = x_surf[:, 0] * (max_x - min_x) + min_x
                         x_surf[:, 1] = x_surf[:, 1] * (max_y - min_y) + min_y
-                        x_surf[:, 2] = -1.0
+                        x_surf[:, 2] = 0.0
 
                     # Compute Physics Losses for this chunk
                     if spatial_dim == 3:

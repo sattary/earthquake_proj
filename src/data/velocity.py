@@ -40,9 +40,8 @@ class VelocityModel:
         self.max_dep = deps.max()
 
         # Simple Linear Normalization for Z to [-1, 1] (or [0, 1])
-        # Let's use [-1, 1] to match X/Y
-        # z_norm = 2 * (dep - min) / (max - min) - 1
-        z_norm = 2 * (deps - self.min_dep) / (self.max_dep - self.min_dep) - 1
+        # Let's use [-1, 0] to match physics requirements where 0=surface, -1=max depth
+        z_norm = -(deps - self.min_dep) / (self.max_dep - self.min_dep)
 
         # Prepare Interpolator
         # (x_norm, y_norm, z_norm) -> Vp
@@ -96,8 +95,8 @@ class VelocityModel:
 
     def normalize_z(self, depth_km):
         # Helper to convert physical depth to normalized z
-        return 2 * (depth_km - self.min_dep) / (self.max_dep - self.min_dep) - 1
+        return -(depth_km - self.min_dep) / (self.max_dep - self.min_dep)
 
     def denormalize_z(self, z_norm_val):
         # Helper to convert normalized z to physical depth
-        return (z_norm_val + 1) * (self.max_dep - self.min_dep) / 2 + self.min_dep
+        return -z_norm_val * (self.max_dep - self.min_dep) + self.min_dep
