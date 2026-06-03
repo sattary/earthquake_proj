@@ -1,0 +1,284 @@
+\documentclass[11pt, a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{titlesec}
+\usepackage{setspace}
+\usepackage{mathpazo}
+\usepackage{booktabs}
+
+% Geometry setup
+\geometry{top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm}
+
+% Formatting
+\titleformat{\section}{\large\bfseries}{\thesection}{1em}{}
+\onehalfspacing
+
+% Colors for hyperlinks
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=cyan,
+    citecolor=blue,
+}
+
+\title{\textbf{From Kinematics to Hazard: \\ A Unified Physics-Informed Inversion of the Iranian Lithosphere}}
+\author{\textbf{Research Proposal (Version 4.0 Draft)}}
+\date{\today}
+
+% ============================================================================
+% Revision history for v4
+% ============================================================================
+% v4 is being built incrementally from v3, one amendment at a time. Each
+% amendment corresponds to a leaf in the phase plan documented in
+% audits/2026-06-03-foundation.md.
+%
+% Applied amendments (committed):
+%   P.1  Locked the Monte Carlo estimator form of L_seis (Eq. 7 -> Eq. 7+7b).
+%
+% Pending amendments (queued for review):
+%   P.2  z-coordinate normalization convention
+%   P.3  UTM zone handling (single vs. multi)
+%   P.4  Magnitude unification rule (Mw priority + Scordilis conversions)
+%   P.5  Magnitude of completeness (MAXC + GFT cross-check)
+%   P.6  Declustering parameters (Zaliapin-Ben-Zion)
+%   P.7  Constitutive law: viscous-only (remove elastic)
+%   P.8  Network hyperparameter formalization
+%   P.9  Data sufficiency footnote (209 GPS vs. 2000)
+%   P.10 Random seed policy
+% ============================================================================
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Mapping the crustal stress field and forecasting earthquakes have traditionally been treated as separate problems: geodesists invert GPS velocities for strain, while seismologists compute probabilistic hazard from earthquake catalogs. We introduce a \textbf{Unified Physics-Informed Neural Network (PINN)} that couples both within a single trainable framework. Our network acts as a mesh-free solver for the 3D momentum balance equation, constrained by heterogeneous material properties derived from P-wave tomography. Unlike previous PINN stress inversions \cite{Masson2023}, which are limited to 2D homogeneous elasticity, our model (i) operates in three dimensions with spatially varying rheology, (ii) uses Fourier feature embeddings to resolve high-frequency stress gradients, and (iii) introduces a \textbf{Coulomb--Dieterich seismicity coupling} that anchors the absolute stress magnitude to the observed earthquake catalog via rate-and-state friction physics \cite{Dieterich1994}. This coupling resolves the fundamental magnitude ambiguity of kinematic-only inversions. Applied to Central Iran, the framework produces the first continuous, physics-constrained 3D map of Coulomb seismogenic potential for the Iranian Plateau.
+\end{abstract}
+
+\section{The Core Problem: Magnitude Ambiguity in Stress Inversions}
+
+The stress state within the Earth's crust is the fundamental driver of earthquakes, yet it cannot be measured directly at depth. Surface geodetic observations---principally GPS velocities and strain-rate azimuths---provide constraints on the \textit{orientation} and \textit{deviatoric pattern} of the stress tensor, but they carry a critical limitation: they cannot constrain the \textit{absolute magnitude} of stress \cite{Khorrami2019}. A region under 10~MPa or 100~MPa of differential stress produces identical surface strain rates.
+
+This \textbf{magnitude ambiguity} has been recognized as a fundamental barrier in tectonophysics \cite{Heidbach2018}. Traditional finite-element approaches \cite{Zamani2017, Rajabi2017} attempt to overcome it by manually prescribing boundary conditions---plate-edge tractions or displacements---but these are themselves poorly constrained and introduce subjective bias.
+
+Recently, Masson et al.\ \cite{Masson2023} demonstrated that a physics-informed neural network can bypass explicit boundary conditions entirely, recovering the 2D elastic stress field of Australia from GPS velocities and World Stress Map orientations. Their work represents a significant advance, but remains limited to: (i) 2D plane stress, (ii) homogeneous effective elasticity, and (iii) purely kinematic constraints with no link to seismic hazard.
+
+We propose to resolve the magnitude ambiguity by introducing a \textbf{third data source}---the historical earthquake catalog---coupled to the stress field through established rate-and-state friction physics.
+
+\section{Governing Equations}
+
+\subsection{Conservation of Momentum ($\mathcal{L}_{\text{PDE}}$)}
+The stress tensor $\sigma_{ij}$ must satisfy static equilibrium:
+\begin{equation}
+    \frac{\partial \sigma_{ij}}{\partial x_j} + \rho(\mathbf{x})\, g_i = 0
+    \label{eq:momentum}
+\end{equation}
+where $\rho(\mathbf{x})$ is the spatially varying crustal density derived from 3D P-wave tomography via the empirical relation $\rho = 2500 + 200 \cdot (V_p - 5)$ \cite{BroNoy2008}, and $g_i$ is the gravitational acceleration vector.
+
+\subsection{Constitutive Law ($\mathcal{L}_{\text{const}}$)}
+We adopt a \textbf{steady-state viscous} (Stokes) constitutive relationship for the interseismic period:
+\begin{equation}
+    \tau_{ij} = 2\,\eta(\mathbf{x})\,\dot{\varepsilon}^{\prime}_{ij}
+    \label{eq:constitutive}
+\end{equation}
+where $\tau_{ij}$ is the deviatoric stress tensor, $\dot{\varepsilon}^{\prime}_{ij}$ is the deviatoric strain-rate tensor, and $\eta(\mathbf{x})$ is the spatially varying effective viscosity. This is the long-timescale limit of Maxwell viscoelasticity (i.e., $\dot{\sigma}_{ij} \to 0$ for $t \gg \tau_M = \eta/\mu$). For the Iranian lithosphere with $\mu \sim 30$~GPa and $\eta \sim 10^{21}$~Pa$\cdot$s, the Maxwell relaxation time $\tau_M \sim 10^{3}$~yr. Since we model the quasi-static interseismic stress field averaged over timescales of $\sim 10^{4}$--$10^{5}$~yr (consistent with the tectonic strain rates of $\sim 10^{-15}$~s$^{-1}$ from GPS \cite{Khorrami2019}), the Stokes approximation is formally justified.
+
+The effective viscosity $\eta(\mathbf{x})$ is derived from the tomographic shear modulus $\mu(\mathbf{x})$ via an assumed Maxwell relaxation time $\tau_M(\mathbf{x})$:
+\begin{equation}
+    \eta(\mathbf{x}) = \mu(\mathbf{x}) \cdot \tau_M(\mathbf{x})
+    \label{eq:viscosity}
+\end{equation}
+In the initial implementation, $\tau_M$ is treated as a depth-dependent parameter. A uniform $\tau_M$ is a known oversimplification; future work will incorporate temperature-dependent rheology.
+
+\subsection{Kinematic Data Constraints ($\mathcal{L}_{\text{data}}$)}
+GPS strain-rate azimuths $\theta_{\text{obs}}$ constrain the predicted maximum horizontal stress orientation $\theta_{\text{pred}}$ at the surface. The azimuthal loss handles the $180^\circ$ ambiguity of the stress tensor \cite{Heidbach2018}:
+\begin{equation}
+    \mathcal{L}_{\text{data}} = \frac{1}{N_{\text{GPS}}} \sum_{k=1}^{N_{\text{GPS}}} \sin^2\!\left(2\left(\theta_{\text{pred}}^{(k)} - \theta_{\text{obs}}^{(k)}\right)\right)
+    \label{eq:data_loss}
+\end{equation}
+where $\theta_{\text{pred}} = \frac{1}{2}\arctan\!\left(\frac{2\sigma_{xy}}{\sigma_{xx} - \sigma_{yy}}\right)$.
+
+\subsection{Coulomb--Dieterich Seismicity Coupling ($\mathcal{L}_{\text{seis}}$)}
+
+This is the central theoretical contribution. Rather than treating seismicity as a statistical phenomenon disconnected from the stress field, we embed the established rate-and-state friction framework of Dieterich \cite{Dieterich1994} directly into the PINN loss.
+
+\subsubsection{Coulomb Failure Function}
+Given the full stress tensor $\sigma_{ij}(\mathbf{x})$ predicted by the PINN, we compute the Coulomb Failure Function (CFF) on optimally oriented fault planes:
+\begin{equation}
+    \text{CFF}(\mathbf{x}) = \tau_{\max}(\mathbf{x}) - \mu_f \left(\sigma_n(\mathbf{x}) - P_f\right)
+    \label{eq:cff}
+\end{equation}
+where:
+\begin{itemize}
+    \item $\tau_{\max}$ is the maximum resolved shear stress on optimally oriented planes, computed from the eigenvalues of $\sigma_{ij}$: $\tau_{\max} = (\sigma_1 - \sigma_3)/2$
+    \item $\sigma_n = (\sigma_1 + \sigma_3)/2$ is the mean normal stress on those planes
+    \item $\mu_f = 0.6$ is the friction coefficient \cite{Byerlee1978}
+    \item $P_f$ is the pore fluid pressure, parameterized as a fraction of lithostatic: $P_f = \lambda_p \cdot \rho g z$ with $\lambda_p \in [0.37, 0.7]$
+\end{itemize}
+
+\subsubsection{Rate-and-State Seismicity Rate}
+The Dieterich \cite{Dieterich1994} model predicts the seismicity rate as a function of the Coulomb stress state:
+\begin{equation}
+    R(\mathbf{x}) = r_0 \cdot \exp\!\left(\frac{\text{CFF}(\mathbf{x})}{A\,\sigma_n}\right)
+    \label{eq:dieterich}
+\end{equation}
+where $r_0$ is the reference background seismicity rate and $A \sim 0.005$--$0.01$ is the rate-and-state constitutive parameter. Note that this formulation uses the \textit{Coulomb failure function} on optimally oriented planes---not the raw differential stress---which correctly accounts for the Mohr--Coulomb failure criterion.
+
+\subsubsection{Poisson Log-Likelihood Loss}
+The earthquake catalog is a marked spatio-temporal point process. The natural loss function is the negative Poisson log-likelihood \cite{Ogata1998}:
+\begin{equation}
+    \mathcal{L}_{\text{seis}} = -\sum_{i=1}^{N_{\text{eq}}} \log R(\mathbf{x}_i) + \int_\Omega R(\mathbf{x})\,d\mathbf{x}
+    \label{eq:poisson}
+\end{equation}
+Both terms are evaluated in practice by Monte Carlo. The first term is averaged over the $N_{\text{eq}}$ declustered catalog events with $M \geq M_c$, where $M_c$ is the magnitude of completeness estimated via the maximum curvature method \cite{Wiemer2000}. The second term (the integral) is approximated by uniform sampling of the domain volume:
+\begin{equation}
+    \mathcal{L}_{\text{seis}} \;\approx\; -\frac{1}{N_{\text{eq}}}\sum_{i=1}^{N_{\text{eq}}} \log R(\mathbf{x}_i) \;+\; \frac{V_\Omega}{N_{\text{coll}}} \sum_{j=1}^{N_{\text{coll}}} R(\mathbf{x}_j)
+    \label{eq:poisson_mc}
+\end{equation}
+where $V_\Omega = (X_{\max} - X_{\min})(Y_{\max} - Y_{\min})(Z_{\max} - Z_{\min})$ is the physical domain volume in m$^3$, computed from the union of the GPS, catalog, and tomography bounding boxes (after coordinate projection to a common reference frame), and $N_{\text{coll}}$ is the number of physics collocation points sampled per training step. The $1/N_{\text{eq}}$ normalization on the first term ensures that the data-fit and integral contributions are on comparable scales during loss-weight tuning; without it, the magnitude of the first term would scale with catalog size and dominate $w_{\text{seis}}$ selection.
+
+\subsection{Total Loss}
+\begin{equation}
+    \mathcal{L}_{\text{total}} = w_{\text{pde}}\,\mathcal{L}_{\text{PDE}} + w_{\text{const}}\,\mathcal{L}_{\text{const}} + w_{\text{data}}\,\mathcal{L}_{\text{data}} + w_{\text{bc}}\,\mathcal{L}_{\text{BC}} + w_{\text{seis}}\,\mathcal{L}_{\text{seis}}
+    \label{eq:total_loss}
+\end{equation}
+where $\mathcal{L}_{\text{BC}}$ enforces the traction-free surface boundary condition ($\sigma_{xz} = \sigma_{yz} = \sigma_{zz} = 0$ at $z = 0$).
+
+\section{Network Architecture}
+
+\begin{table}[h!]
+\centering
+\caption{Comparison with Masson et al.\ \cite{Masson2023} (ML-SEISMIC).}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Feature} & \textbf{ML-SEISMIC} & \textbf{This Work} \\
+\midrule
+Dimensionality & 2D & \textbf{3D} \\
+Constitutive Law & Linear Elastic & \textbf{Viscous (Stokes)} \\
+Material Properties & Homogeneous (trained) & \textbf{Heterogeneous (tomography)} \\
+Input Embedding & None & \textbf{Fourier Features} \\
+Seismicity Coupling & None & \textbf{Coulomb--Dieterich} \\
+Boundary Conditions & 2 displacement pins & \textbf{Traction-free surface} \\
+Validation & Analytical benchmark & \textbf{Synthetic + WSM + FEM} \\
+\bottomrule
+\end{tabular}
+\label{tab:comparison}
+\end{table}
+
+The neural network $f_\theta : \mathbb{R}^3 \to \mathbb{R}^9$ maps normalized spatial coordinates $(x, y, z)$ to the velocity and stress fields $(v_x, v_y, v_z, \sigma_{xx}, \sigma_{yy}, \sigma_{zz}, \sigma_{xy}, \sigma_{yz}, \sigma_{xz})$. The architecture employs:
+\begin{itemize}
+    \item \textbf{Fourier Feature Mapping} \cite{Tancik2020}: random Fourier projection $\gamma(\mathbf{x}) = [\sin(2\pi\mathbf{B}\mathbf{x}), \cos(2\pi\mathbf{B}\mathbf{x})]$ to overcome the spectral bias of standard MLPs, enabling resolution of high-frequency stress gradients near fault zones.
+    \item \textbf{Fully-connected MLP}: 4 hidden layers with $\tanh$ activation and Xavier initialization.
+    \item \textbf{Non-dimensionalization}: all quantities are scaled by characteristic values ($S_0 = 1$~GPa, $V_0 = 10^{-9}$~m/s, $L_0 = 10^6$~m) to ensure $O(1)$ loss residuals.
+\end{itemize}
+
+\section{Data Sources}
+
+\begin{enumerate}
+    \item \textbf{GPS strain-rate azimuths}: $\sim$2000 observations from Khorrami et al.\ \cite{Khorrami2019} and Rayisi \cite{Rayisi2016}, providing maximum compressive strain-rate orientation across the Iranian Plateau.
+    \item \textbf{3D P-wave velocity model}: Tomographic model covering Central Iran to $\sim$30~km depth, providing spatially heterogeneous $V_p(\mathbf{x})$, from which $\rho$, $\mu$, and $\eta$ are derived.
+    \item \textbf{Earthquake catalog}: Historical and instrumental seismicity of Central Iran ($M_w \geq M_c$), used to construct the spatial seismicity rate for the coupling loss. Aftershock declustering is applied via the Zaliapin--Ben-Zion method \cite{Zaliapin2008}.
+\end{enumerate}
+
+\section{Validation Plan}
+
+\subsection{Synthetic Recovery Test}
+A known 3D stress field is generated from an analytical or FEM solution. Synthetic GPS azimuths and a synthetic earthquake catalog (sampled from the Coulomb--Dieterich rate) are produced. The PINN must recover the input stress field to within a defined tolerance. This demonstrates well-posedness: the combination of surface azimuths and volumetric seismicity data provides sufficient constraint for a unique solution.
+
+\subsection{Independent Validation}
+\begin{enumerate}
+    \item \textbf{World Stress Map}: predicted $S_{H\text{max}}$ orientations are compared against independent WSM records for Iran \cite{Heidbach2018}.
+    \item \textbf{FEM comparison}: results are compared against the finite-element stress model of Zamani \cite{Zamani2017} for Central Iran.
+    \item \textbf{Leave-one-out cross-validation}: GPS stations are held out individually; the model must predict their azimuth from the remaining data.
+\end{enumerate}
+
+\subsection{Uncertainty Quantification}
+An ensemble of PINNs with different random initializations and Fourier frequency matrices provides epistemic uncertainty estimates on predicted stress magnitudes and seismicity rates.
+
+\section{Scientific Significance}
+
+The coupling term $\mathcal{L}_{\text{seis}}$ (Eq.~\ref{eq:poisson}) resolves the magnitude ambiguity through a mechanism grounded in three decades of earthquake physics \cite{Dieterich1994}:
+\begin{itemize}
+    \item Regions with frequent seismicity anchor the Coulomb stress level to values near the failure threshold, constraining the \textit{absolute magnitude} of the stress tensor.
+    \item Aseismic regions are constrained to have Coulomb stress below the failure threshold, or to lack suitably oriented faults.
+    \item The rate-and-state framework naturally predicts the Omori aftershock decay law, providing internal consistency checks.
+\end{itemize}
+
+No previous work has coupled a PINN-based stress inversion with rate-and-state seismicity physics. This represents a unification of continuum mechanics (tectonophysics) with statistical seismology within a single differentiable framework.
+
+\section{Expected Impact}
+
+This framework produces the first continuous, physics-constrained 3D map of both stress tensor and seismogenic potential for an active collision zone. Unlike statistical hazard maps that extrapolate from past seismicity patterns, this model explains \textit{why} earthquakes occur where they do by computing the Coulomb failure state from first principles, constrained by surface geodesy and deep tomographic structure.
+
+\begin{thebibliography}{99}
+
+\bibitem{Masson2023}
+Masson, Y., Lhomme, T. \& Tillier, E. (2023). Physics-informed neural network reconciles Australian displacements and tectonic stresses. \textit{Sci.\ Rep.}\ \textbf{13}, 22770.
+
+\bibitem{Dieterich1994}
+Dieterich, J.H. (1994). A constitutive law for rate of earthquake production and its application to earthquake clustering. \textit{J.\ Geophys.\ Res.}\ \textbf{99}, 2601--2618.
+
+\bibitem{Byerlee1978}
+Byerlee, J.D. (1978). Friction of rocks. \textit{Pure Appl.\ Geophys.}\ \textbf{116}, 615--626.
+
+\bibitem{Ogata1998}
+Ogata, Y. (1998). Space-time point-process models for earthquake occurrences. \textit{Ann.\ Inst.\ Stat.\ Math.}\ \textbf{50}, 379--402.
+
+\bibitem{Wiemer2000}
+Wiemer, S. \& Wyss, M. (2000). Minimum magnitude of completeness in earthquake catalogs. \textit{Bull.\ Seismol.\ Soc.\ Am.}\ \textbf{90}, 859--869.
+
+\bibitem{Zaliapin2008}
+Zaliapin, I. \& Ben-Zion, Y. (2008). Earthquake clusters in southern California. \textit{J.\ Geophys.\ Res.}\ \textbf{113}, B12301.
+
+\bibitem{Tancik2020}
+Tancik, M., et al. (2020). Fourier Features Let Networks Learn High Frequency Functions in Low Dimensional Domains. \textit{NeurIPS}.
+
+\bibitem{Karniadakis2021}
+Karniadakis, G.E., et al. (2021). Physics-informed machine learning. \textit{Nat.\ Rev.\ Phys.}\ \textbf{3}, 422--440.
+
+\bibitem{Haghighat2021}
+Haghighat, E., Raissi, M., Moure, A., Gomez, H. \& Juanes, R. (2021). A physics-informed deep learning framework for inversion and surrogate modeling in solid mechanics. \textit{Comput.\ Methods Appl.\ Mech.\ Eng.}\ \textbf{379}, 113741.
+
+\bibitem{Zhang2022}
+Zhang, H., et al. (2022). A physics-informed neural network for modeling fracture without gradient damage. \textit{Sci.\ Rep.}
+
+\bibitem{Li2023}
+Li, Y., et al. (2023). Inferring viscoplastic models from velocity fields: a physics-informed neural network approach. \textit{arXiv:2506.17681}.
+
+\bibitem{Degen2023}
+Degen, D., et al. (2023). Perspectives of Physics-Based Machine Learning Strategies for Geoscientific Applications. \textit{GMD}.
+
+\bibitem{Zamani2017}
+Zamani, G. (2017). Finite Element Modeling of Tectonic Stress Field of Central Iran. \textit{Acta Geodyn.\ Geomater.}
+
+\bibitem{Rajabi2017}
+Rajabi, M., Heidbach, O., Tingay, M. \& Reiter, K. (2017). Prediction of the present-day stress field in the Australian continental crust using 3D geomechanical-numerical models. \textit{Aust.\ J.\ Earth Sci.}\ \textbf{64}, 435--454.
+
+\bibitem{Ranalli1995}
+Ranalli, G. (1995). \textit{Rheology of the Earth}. Chapman \& Hall.
+
+\bibitem{Khorrami2019}
+Khorrami, F., et al. (2019). Kinematic analysis of the Iranian Plateau using GPS data. \textit{GJI}.
+
+\bibitem{Rayisi2016}
+Rayisi, A. (2016). GPS strain rate analysis of the Iranian Plateau. \textit{M.Sc.\ Thesis}.
+
+\bibitem{Anderson1951}
+Anderson, E.M. (1951). \textit{The Dynamics of Faulting}. Oliver \& Boyd.
+
+\bibitem{Heidbach2018}
+Heidbach, O., et al. (2018). The world stress map database release 2016. \textit{Tectonophysics}\ \textbf{744}, 484--498.
+
+\bibitem{BroNoy2008}
+Brocher, T.M. (2005). Empirical relations between elastic wavespeeds and density in the Earth's crust. \textit{Bull.\ Seismol.\ Soc.\ Am.}\ \textbf{95}, 2081--2092.
+
+\bibitem{GCMT}
+Ekstr\"om, G., et al. (2012). The global CMT project 2004--2010. \textit{PEPI}.
+
+\end{thebibliography}
+
+\end{document}
