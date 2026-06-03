@@ -123,11 +123,6 @@ def train(
         "--catalog-file",
         help="Path to earthquake catalog for seismicity coupling (overrides config)",
     ),
-    constitutive: Optional[str] = typer.Option(
-        None,
-        "--constitutive",
-        help="Constitutive law: 'viscous' or 'elastic' (overrides config)",
-    ),
     resume: bool = typer.Option(False, help="Resume from latest checkpoint"),
     multi_gpu: Optional[bool] = typer.Option(
         None,
@@ -188,7 +183,6 @@ def train(
         "spatial_dim": spatial_dim,
         "velocity_file": velocity_file,
         "catalog_file": catalog_file,
-        "constitutive": constitutive,
         "multi_gpu": multi_gpu,
     }
     overrides = {k: v for k, v in overrides.items() if v is not None}
@@ -206,7 +200,7 @@ def train(
         f"  Loss:  w_data={cfg.loss.w_data}, w_pde={cfg.loss.w_pde}, w_seis={cfg.loss.w_seis}"
     )
     print(
-        f"  Physics: constitutive={cfg.physics.constitutive}, coupling={cfg.physics.coupling_enabled}"
+        f"  Physics: coupling={cfg.physics.coupling_enabled}"
     )
     print(f"  Data:   velocity={cfg.data.velocity_file}")
     if cfg.data.catalog_file:
@@ -247,7 +241,6 @@ def train(
         fourier_scale=cfg.model.fourier_scale,
         auto_push_callback=auto_push_cb,
         multi_gpu=cfg.multi_gpu,
-        constitutive=cfg.physics.constitutive,
         coupling_enabled=coupling_on,
     )
 
@@ -322,11 +315,6 @@ def tune(
         "--multi-gpu/--no-multi-gpu",
         help="Use multiple GPUs for tuning trials (overrides config)",
     ),
-    constitutive: Optional[str] = typer.Option(
-        None,
-        "--constitutive",
-        help="Constitutive law: 'viscous' or 'elastic' (overrides config)",
-    ),
     auto_push: bool = typer.Option(
         False,
         "--auto-push",
@@ -355,7 +343,6 @@ def tune(
         "spatial_dim": spatial_dim,
         "velocity_file": velocity_file,
         "multi_gpu": multi_gpu,
-        "constitutive": constitutive,
     }
     overrides = {k: v for k, v in overrides.items() if v is not None}
 
@@ -382,7 +369,6 @@ def tune(
         spatial_dim=cfg.model.spatial_dim,
         velocity_file=cfg.data.velocity_file,
         multi_gpu=cfg.multi_gpu,
-        constitutive=cfg.physics.constitutive,
         coupling_enabled=cfg.physics.coupling_enabled,
         base_cfg=cfg,
         auto_push_callback=auto_push_cb,

@@ -49,9 +49,11 @@
 %        adopted M_c = max(both). New Section 2.5.5.
 %   P.6  Aftershock declustering: Zaliapin-Ben-Zion 2008 nearest-neighbor
 %        with b=1.0, d_f=1.6, eta_0=1.0. New Section 2.5.6.
+%   P.7  Constitutive law: viscous-only. New Section 2.7 'Constitutive
+%        Law Scope' notes elastic mode is deprecated and out of scope
+%        for the interseismic timescale; code cleanup in same commit.
 %
 % Pending amendments (queued for review):
-%   P.7  Constitutive law: viscous-only (remove elastic)
 %   P.8  Network hyperparameter formalization
 %   P.10 Random seed policy
 % (P.9 superseded by P.3's data count fix.)
@@ -222,6 +224,9 @@ The result of declustering is a catalog in which each event is flagged as either
     \label{eq:total_loss}
 \end{equation}
 where $\mathcal{L}_{\text{BC}}$ enforces the traction-free surface boundary condition ($\sigma_{xz} = \sigma_{yz} = \sigma_{zz} = 0$ at $z = 0$).
+
+\subsection{Constitutive Law Scope}
+The framework supports only the viscous (Stokes) constitutive law. An elastic (Hooke) mode was implemented in earlier versions of the code as a prototype but is not part of the present study. The Stokes approximation is justified on the interseismic timescale of $\sim 10^4$--$10^5$~yr (Section~\ref{sec:coords}); the elastic response is relevant only on the co-seismic timescale ($\sim$ s), which is outside the scope of the inversion. Future work may add a co-seismic elastic module to the same network, gated by a switch on the strain rate.
 
 \section{Network Architecture}
 

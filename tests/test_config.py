@@ -21,7 +21,7 @@ class TestConfigDefaults:
         assert cfg.model.spatial_dim == 3
         assert cfg.optim.lr == 1e-3
         assert cfg.loss.w_data == 5.0
-        assert cfg.physics.constitutive == "viscous"
+        assert cfg.physics.coupling_enabled is False
         assert cfg.logging.run_name == "default"
 
     def test_computed_properties(self):
@@ -59,7 +59,7 @@ class TestLoadJSONConfig:
 
         config_data = {
             "model": {"spatial_dim": 2, "fourier_scale": 5.0},
-            "physics": {"constitutive": "elastic", "coupling_enabled": True},
+            "physics": {"coupling_enabled": True, "mu_friction": 0.6},
         }
 
         config_file = tmp_path / "config.json"
@@ -69,8 +69,8 @@ class TestLoadJSONConfig:
 
         assert cfg.model.spatial_dim == 2
         assert cfg.model.fourier_scale == 5.0
-        assert cfg.physics.constitutive == "elastic"
         assert cfg.physics.coupling_enabled is True
+        assert cfg.physics.mu_friction == 0.6
 
 
 class TestLoadYAMLConfig:
@@ -104,7 +104,6 @@ logging:
 
         config_yaml = """
 physics:
-  constitutive: elastic
   coupling_enabled: true
   mu_friction: 0.6
 """
@@ -114,7 +113,6 @@ physics:
 
         cfg = load_train_config(str(config_file))
 
-        assert cfg.physics.constitutive == "elastic"
         assert cfg.physics.coupling_enabled is True
         assert cfg.physics.mu_friction == 0.6
 

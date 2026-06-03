@@ -77,7 +77,6 @@ class LossConfig:
 class PhysicsConfig:
     """Configuration for physics model parameters."""
 
-    constitutive: str = "viscous"
     coupling_enabled: bool = False
     a_param: float = 1e-3
     mu_friction: float = 0.75

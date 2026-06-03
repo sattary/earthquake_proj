@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from src.core.model import SpatialPINN
 from src.core.physics import Physics
-from src.core.constants import S0, V0, MU_BASELINE
+from src.core.constants import S0, V0
 from src.data.loaders import GPSDataset, CatalogDataset
 from src.data.velocity import VelocityModel
 from src.git_automation import AutoPushCallback
@@ -32,12 +32,10 @@ class PINNTrainer:
         checkpoint_dir: str = "checkpoints",
         auto_push_callback: Optional[AutoPushCallback] = None,
         multi_gpu: bool = True,
-        constitutive: str = "viscous",
         coupling_enabled: bool = False,
     ):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.auto_push_callback = auto_push_callback
-        self.constitutive = constitutive
         self.coupling_enabled = coupling_enabled
         self.raw_model = SpatialPINN(
             spatial_dim=spatial_dim,
@@ -96,7 +94,7 @@ class PINNTrainer:
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Computes 3D physics residuals using the Core Physics engine.
-        Supports both viscous (Stokes) and elastic (Hooke) constitutive laws.
+        Uses the viscous (Stokes) constitutive law (per proposal §3).
         """
         rho = 2700.0
         mu = 30e9
@@ -125,31 +123,15 @@ class PINNTrainer:
         )
         loss_pde = torch.mean(res_x**2 + res_y**2 + res_z**2)
 
-        # Branch on constitutive mode
-        if self.constitutive == "elastic":
-            # Compute Lame's first parameter from mu:
-            # Assuming Poisson ratio nu=0.25 -> lambda = mu
-            lam = mu if vel_model is not None else MU_BASELINE
-            r_xx, r_yy, r_zz, r_xy, r_yz, r_xz, r_vol = Physics.elastic_constitutive_3d(
-                self.model,
-                x_coll,
-                lam=lam,
-                mu=mu if vel_model is not None else MU_BASELINE,
-                scale_x=scale_x,
-                scale_z=scale_z,
-                stress_scale=S0,
-                disp_scale=V0,
-            )
-        else:
-            r_xx, r_yy, r_zz, r_xy, r_yz, r_xz, r_vol = Physics.constitutive_3d(
-                self.model,
-                x_coll,
-                eta=eta_val,
-                scale_x=scale_x,
-                scale_z=scale_z,
-                stress_scale=S0,
-                vel_scale=V0,
-            )
+        r_xx, r_yy, r_zz, r_xy, r_yz, r_xz, r_vol = Physics.constitutive_3d(
+            self.model,
+            x_coll,
+            eta=eta_val,
+            scale_x=scale_x,
+            scale_z=scale_z,
+            stress_scale=S0,
+            vel_scale=V0,
+        )
         loss_const = torch.mean(
             r_xx**2 + r_yy**2 + r_zz**2 + r_xy**2 + r_yz**2 + r_xz**2 + r_vol**2
         )

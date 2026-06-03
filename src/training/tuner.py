@@ -35,7 +35,6 @@ def _create_objective(
     tune_epochs: int,
     spatial_dim: int,
     velocity_file: Optional[str],
-    constitutive: str,
     coupling_enabled: bool,
 ):
     """Build an Optuna objective closure decoupled from engine."""
@@ -55,7 +54,6 @@ def _create_objective(
             lr=lr,
             fourier_scale=f_scale,
             multi_gpu=False,  # DO NOT USE DataParallel for parallel trials
-            constitutive=constitutive,
             coupling_enabled=coupling_enabled,
         )
 
@@ -93,7 +91,6 @@ def _run_trial_worker(
     tune_epochs: int,
     spatial_dim: int,
     velocity_file: Optional[str],
-    constitutive: str,
     coupling_enabled: bool,
     study_name: str,
     storage: str,
@@ -110,7 +107,6 @@ def _run_trial_worker(
         tune_epochs=tune_epochs,
         spatial_dim=spatial_dim,
         velocity_file=velocity_file,
-        constitutive=constitutive,
         coupling_enabled=coupling_enabled,
     )
 
@@ -151,7 +147,6 @@ def run_tuning(
     spatial_dim: int = 3,
     velocity_file: Optional[str] = None,
     multi_gpu: bool = False,
-    constitutive: str = "viscous",
     coupling_enabled: bool = False,
     base_cfg: Optional[Any] = None,
     auto_push_callback: Optional[Any] = None,
@@ -219,7 +214,6 @@ def run_tuning(
                         epochs,
                         spatial_dim,
                         velocity_file,
-                        constitutive,
                         coupling_enabled,
                         study_name,
                         storage,
@@ -245,7 +239,6 @@ def run_tuning(
                 epochs,
                 spatial_dim,
                 velocity_file,
-                constitutive,
                 coupling_enabled,
             )
             study.optimize(objective, n_trials=remaining, show_progress_bar=True)
