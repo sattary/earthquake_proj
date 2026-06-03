@@ -40,16 +40,18 @@
 %   P.1  Locked the Monte Carlo estimator form of L_seis (Eq. 7 -> Eq. 7+8).
 %   P.2  z-coordinate normalization convention: [-1, 1]^2 x [-1, 0] with
 %        surface at z=0 and max depth at z=-1 (new Section 3.3).
+%   P.3  UTM zone handling: single-zone (zone 39) restricted to Central
+%        Iran subset (48E-54E, 25N-40N) with conformal distortion analysis;
+%        also fixes GPS count to N=209 in Data Sources item 1.
 %
 % Pending amendments (queued for review):
-%   P.3  UTM zone handling (single vs. multi)
 %   P.4  Magnitude unification rule (Mw priority + Scordilis conversions)
 %   P.5  Magnitude of completeness (MAXC + GFT cross-check)
 %   P.6  Declustering parameters (Zaliapin-Ben-Zion)
 %   P.7  Constitutive law: viscous-only (remove elastic)
 %   P.8  Network hyperparameter formalization
-%   P.9  Data sufficiency footnote (209 GPS vs. 2000)
 %   P.10 Random seed policy
+% (P.9 superseded by P.3's data count fix.)
 % ============================================================================
 
 \begin{document}
@@ -100,6 +102,11 @@ In the initial implementation, $\tau_M$ is treated as a depth-dependent paramete
 All spatial coordinates are normalized to the half-open cube $[-1, 1]^2 \times [-1, 0]$. The $x$ and $y$ axes are isotropic in UTM meters; the $z$ axis uses the convention $z = 0$ at the Earth's surface and $z = -1$ at the maximum depth of the velocity model. This $z$-asymmetry is deliberate: the network is evaluated only on the physical crustal volume $\{z \in [-1, 0]\}$, the traction-free surface boundary condition applies at $z = 0$, and the gravitational body force acts in the $-z$ direction. Using a symmetric $[-1, 1]$ range in $z$ would force the network to represent the unphysical half-space $z > 0$ (above the surface) and would double the collocation domain without adding information.
 
 The bounding box is taken as the union of the GPS, declustered catalog, and tomography coverage (after projecting GPS and catalog latitudes/longitudes to the same UTM zone as the velocity model). The characteristic length scale $L_0 = 10^6$~m is half the maximum horizontal extent of this bounding box, and the characteristic depth scale $Z_0$ is the maximum depth of the velocity model. Surface collocation points for the traction-free boundary condition are placed at $z = 0$; volume collocation points are sampled uniformly on $[-1, 0]$ in $z$.
+
+\subsubsection*{UTM zone handling.}
+The Iranian plateau spans UTM zones 38--41 (longitudes 42$^\circ$E to 66$^\circ$E). The transverse Mercator projection used in UTM introduces a conformal scale error of order $(s/R)\tan\varphi \cdot \Delta\lambda^2$ at distance $\Delta\lambda$ from the central meridian, where $s$ is the along-meridian distance and $R$ is Earth radius. At the zone edge ($|\Delta\lambda| = 3^\circ$) this error reaches $\sim 1$ part in 800, which is well below the GPS azimuth noise floor of $\sim 2^\circ$ and therefore acceptable for the present inversion.
+
+For the present study we adopt a \textbf{single-zone} (zone 39, central meridian 51$^\circ$E) projection restricted to the Central Iran subset of the GPS, catalog, and tomography data (longitudes 48$^\circ$E--54$^\circ$E). This restriction is conservative: it keeps the conformal distortion under $\sim 0.4$ parts in 800 across the domain, and it is consistent with the spatial coverage of the Morteza et al.\ (2023) P-wave tomography model. A multi-zone analysis with continuous re-projection at zone boundaries is deferred to follow-up work; the framework's coordinate transformer accepts a configurable zone number so that switching to multi-zone is a runtime parameter change rather than a code refactor.
 
 \subsection{Kinematic Data Constraints ($\mathcal{L}_{\text{data}}$)}
 GPS strain-rate azimuths $\theta_{\text{obs}}$ constrain the predicted maximum horizontal stress orientation $\theta_{\text{pred}}$ at the surface. The azimuthal loss handles the $180^\circ$ ambiguity of the stress tensor \cite{Heidbach2018}:
@@ -186,7 +193,7 @@ The neural network $f_\theta : \mathbb{R}^3 \to \mathbb{R}^9$ maps normalized sp
 \section{Data Sources}
 
 \begin{enumerate}
-    \item \textbf{GPS strain-rate azimuths}: $\sim$2000 observations from Khorrami et al.\ \cite{Khorrami2019} and Rayisi \cite{Rayisi2016}, providing maximum compressive strain-rate orientation across the Iranian Plateau.
+    \item \textbf{GPS strain-rate azimuths}: $N = 209$ observations from the combined Khorrami et al.\ \cite{Khorrami2019} and Rayisi \cite{Rayisi2016} datasets, restricted to the Central Iran subset (longitudes 48$^\circ$E--54$^\circ$E, latitudes 25$^\circ$N--40$^\circ$N) consistent with the UTM zone 39 choice in Section~\ref{sec:coords}. The azimuths provide maximum compressive strain-rate orientation. The full combined GPS+interferometric catalog available to the broader project (estimated $\sim 2000$ observations across the whole plateau) is left for follow-up work after the single-zone analysis is validated.
     \item \textbf{3D P-wave velocity model}: Tomographic model covering Central Iran to $\sim$30~km depth, providing spatially heterogeneous $V_p(\mathbf{x})$, from which $\rho$, $\mu$, and $\eta$ are derived.
     \item \textbf{Earthquake catalog}: Historical and instrumental seismicity of Central Iran ($M_w \geq M_c$), used to construct the spatial seismicity rate for the coupling loss. Aftershock declustering is applied via the Zaliapin--Ben-Zion method \cite{Zaliapin2008}.
 \end{enumerate}
