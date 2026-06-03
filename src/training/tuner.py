@@ -36,6 +36,7 @@ def _create_objective(
     spatial_dim: int,
     velocity_file: Optional[str],
     coupling_enabled: bool,
+    catalog_file: Optional[str],
 ):
     """Build an Optuna objective closure decoupled from engine."""
 
@@ -45,6 +46,7 @@ def _create_objective(
         w_pde = trial.suggest_float("w_pde", 0.1, 10.0, log=True)
         w_const = trial.suggest_float("w_const", 0.1, 10.0, log=True)
         w_bc = trial.suggest_float("w_bc", 0.1, 10.0, log=True)
+        w_seis = trial.suggest_float("w_seis", 0.1, 10.0, log=True) if coupling_enabled else 0.0
         f_scale = trial.suggest_float("f_tune", 0.5, 3.0)
 
         # 2. Setup Trainer: Enforce single-GPU isolation for parallel stability
@@ -67,7 +69,9 @@ def _create_objective(
                 w_pde=w_pde,
                 w_const=w_const,
                 w_bc=w_bc,
+                w_seis=w_seis,
                 velocity_file=velocity_file,
+                catalog_file=catalog_file,
                 optuna_trial=trial,
             )
         except optuna.TrialPruned:
@@ -92,6 +96,7 @@ def _run_trial_worker(
     spatial_dim: int,
     velocity_file: Optional[str],
     coupling_enabled: bool,
+    catalog_file: Optional[str],
     study_name: str,
     storage: str,
     n_trials: int,
@@ -108,6 +113,7 @@ def _run_trial_worker(
         spatial_dim=spatial_dim,
         velocity_file=velocity_file,
         coupling_enabled=coupling_enabled,
+        catalog_file=catalog_file,
     )
 
     study = optuna.load_study(
@@ -184,6 +190,8 @@ def run_tuning(
             f"Running {remaining} trials ({len(study.trials)} existing, {n_trials} target)."
         )
 
+        catalog_file = base_cfg.data.catalog_file if base_cfg is not None else None
+
         # Hardware Detection
         n_workers = 1
         gpu_ids = [0]
@@ -215,6 +223,7 @@ def run_tuning(
                         spatial_dim,
                         velocity_file,
                         coupling_enabled,
+                        catalog_file,
                         study_name,
                         storage,
                         worker_trials,
@@ -240,6 +249,7 @@ def run_tuning(
                 spatial_dim,
                 velocity_file,
                 coupling_enabled,
+                catalog_file,
             )
             study.optimize(objective, n_trials=remaining, show_progress_bar=True)
 
@@ -272,6 +282,8 @@ def run_tuning(
         best_cfg.loss.w_pde = study.best_params["w_pde"]
         best_cfg.loss.w_const = study.best_params["w_const"]
         best_cfg.loss.w_bc = study.best_params["w_bc"]
+        if "w_seis" in study.best_params:
+            best_cfg.loss.w_seis = study.best_params["w_seis"]
         best_cfg.model.fourier_scale = study.best_params["f_tune"]
 
         best_config_path = str(optuna_dir / "best_config.yaml")
