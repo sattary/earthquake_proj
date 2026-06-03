@@ -63,7 +63,7 @@ class AnalyticalBenchmark:
         }
 
     def simple_shear(
-        self, coords: torch.Tensor, tau_max: float = 1e7
+        self, coords: torch.Tensor, tau_max: float = 1.5e8
     ) -> Dict[str, torch.Tensor]:
         """
         Strike-slip simple shear regime (e.g., San Andreas or North Anatolian style).

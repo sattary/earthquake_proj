@@ -277,7 +277,9 @@ class PINNTrainer:
                 total_seis = 0.0
 
                 l_seis_term1_val = 0.0
+                N_cat = 1
                 if w_seis > 0.0 and catalog_coords is not None and spatial_dim == 3:
+                    N_cat = catalog_coords.shape[0]
                     # Compute Term 1 (Catalog Error) ONCE per GPS batch
                     cff_cat, sigma_n_cat = Physics.coulomb_failure(
                         self.model,
@@ -348,7 +350,7 @@ class PINNTrainer:
                             self.raw_model.a_param,
                             self.raw_model.r0,
                         )
-                        l_seis = torch.mean(rate_coll)
+                        l_seis = (4.0 / N_cat) * torch.mean(rate_coll)
                         loss_chunk = loss_chunk + (w_seis * l_seis) / num_batches
 
                     loss_chunk.backward()
