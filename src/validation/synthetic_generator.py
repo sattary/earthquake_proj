@@ -187,7 +187,7 @@ class SyntheticDataGenerator:
             {
                 "long": events_x[:num_events],
                 "lat": events_y[:num_events],
-                "fd": events_z[:num_events],
+                "fd": [-z / 1000.0 for z in events_z[:num_events]],
                 "mw_unified": np.random.uniform(
                     4.0, 7.0, num_events
                 ),  # Arbitrary magnitudes

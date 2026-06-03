@@ -47,8 +47,8 @@ def evaluate_synthetic_recovery(
         # Bypass geographic projection, pass raw Cartesian (x, y)
         mock_inst.to_normalized.side_effect = lambda lats, longs: torch.stack(
             [
-                torch.tensor(longs, dtype=torch.float32),
-                torch.tensor(lats, dtype=torch.float32),
+                (torch.tensor(longs, dtype=torch.float32) / 50000.0) - 1.0,
+                (torch.tensor(lats, dtype=torch.float32) / 50000.0) - 1.0,
             ],
             dim=1,
         )
@@ -80,7 +80,7 @@ def evaluate_synthetic_recovery(
     # Normalize coords for NN input
     x_norm = (coords[:, 0] / mock_inst.scale) - 1.0
     y_norm = (coords[:, 1] / mock_inst.scale) - 1.0
-    z_norm = (coords[:, 2] / 15000.0) + 1.0  # 0 to -30km -> -1 to 1
+    z_norm = coords[:, 2] / 30000.0  # -30km to 0km -> -1 to 0
     coords_norm = torch.stack([x_norm, y_norm, z_norm], dim=1)
 
     with torch.no_grad():
