@@ -45,9 +45,10 @@
 %        also fixes GPS count to N=209 in Data Sources item 1.
 %   P.4  Magnitude unification rule: Mw priority, else Scordilis 2006
 %        conversions (new Section 2.5.4 + Scordilis2006 bibitem).
+%   P.5  Magnitude of completeness M_c: MAXC + 0.2 and GFT (90%),
+%        adopted M_c = max(both). New Section 2.5.5.
 %
 % Pending amendments (queued for review):
-%   P.5  Magnitude of completeness (MAXC + GFT cross-check)
 %   P.6  Declustering parameters (Zaliapin-Ben-Zion)
 %   P.7  Constitutive law: viscous-only (remove elastic)
 %   P.8  Network hyperparameter formalization
@@ -177,7 +178,23 @@ We therefore adopt the following \textbf{unification rule}, applied per event in
           For $m_b > 6.1$ the conversion is unreliable and the event is dropped.
     \item Else (only $M_L$, $M_I$, or no magnitude reported), the event is dropped.
 \end{enumerate}
-The resulting unified magnitude is written as a single column $M_w^{\text{uni}}$ in the cleaned catalog. This rule is applied \emph{before} the magnitude-of-completeness filter and before declustering (the latter two steps will be added in upcoming amendments P.5 and P.6; for now we note that magnitude unification is the first preprocessing step in the pipeline).
+The resulting unified magnitude is written as a single column $M_w^{\text{uni}}$ in the cleaned catalog. This rule is applied \emph{before} the magnitude-of-completeness filter (Section~\ref{sec:mc_est}) and before declustering (Section~\ref{sec:decluster}); it is the first preprocessing step in the pipeline.
+
+\subsubsection{Magnitude of Completeness}
+\label{sec:mc_est}
+The magnitude of completeness $M_c$ is the minimum magnitude above which the declustered catalog is assumed to record all events. Below $M_c$ the catalog is incomplete due to detection thresholds, network geometry, or human reporting bias. Because $\mathcal{L}_{\text{seis}}$ (Eq.~\ref{eq:poisson_mc}) uses $R(\mathbf{x}_i)$ evaluated only at events with $M \ge M_c$, an underestimate of $M_c$ inflates the catalog with undetected events and biases the rate estimate; an overestimate of $M_c$ discards useful data.
+
+We estimate $M_c$ from the declustered, magnitude-unified catalog using two cross-checked methods \cite{Wiemer2000}:
+\begin{enumerate}
+    \item \textbf{Maximum Curvature (MAXC).} $M_c^{\text{MAXC}}$ is the modal magnitude of the non-cumulative Gutenberg-Richter frequency-magnitude distribution, defined as the magnitude bin at which the count $N(M)$ peaks. MAXC is known to underestimate the true $M_c$ by approximately $0.2$ units when the catalog rolls off rapidly, so the corrected estimate is $M_c^{\text{MAXC, corr}} = M_c^{\text{MAXC}} + 0.2$.
+    \item \textbf{Goodness-of-Fit Test (GFT).} $M_c^{\text{GFT}}$ is the lowest magnitude above which the observed frequency-magnitude distribution matches the synthetic Gutenberg-Richter power law at the 90\% confidence level, where the residual is computed as $R(M) = 100 - \bigl(N_{\text{obs}}(M \ge M) / N_{\text{exp}}(M \ge M)\bigr) \cdot 100$, with the 90\% threshold being $R \le 90\%$.
+\end{enumerate}
+The adopted $M_c$ is
+\begin{equation}
+    M_c = \max\bigl(M_c^{\text{MAXC, corr}},\; M_c^{\text{GFT}}\bigr).
+    \label{eq:mc_def}
+\end{equation}
+The max-combination prevents the GFT estimate from undershooting when it identifies a higher threshold than MAXC, while the MAXC $+0.2$ correction prevents the typical MAXC bias from propagating. Both intermediate values and the adopted $M_c$ are reported alongside the number of events retained, $N_{\text{eq}}$, so that the sensitivity of subsequent results to the choice of $M_c$ is auditable. Events with $M_w^{\text{uni}} < M_c$ are dropped before the declustering step.
 
 \subsection{Total Loss}
 \begin{equation}
