@@ -37,10 +37,11 @@
 % audits/2026-06-03-foundation.md.
 %
 % Applied amendments (committed):
-%   P.1  Locked the Monte Carlo estimator form of L_seis (Eq. 7 -> Eq. 7+7b).
+%   P.1  Locked the Monte Carlo estimator form of L_seis (Eq. 7 -> Eq. 7+8).
+%   P.2  z-coordinate normalization convention: [-1, 1]^2 x [-1, 0] with
+%        surface at z=0 and max depth at z=-1 (new Section 3.3).
 %
 % Pending amendments (queued for review):
-%   P.2  z-coordinate normalization convention
 %   P.3  UTM zone handling (single vs. multi)
 %   P.4  Magnitude unification rule (Mw priority + Scordilis conversions)
 %   P.5  Magnitude of completeness (MAXC + GFT cross-check)
@@ -93,6 +94,12 @@ The effective viscosity $\eta(\mathbf{x})$ is derived from the tomographic shear
     \label{eq:viscosity}
 \end{equation}
 In the initial implementation, $\tau_M$ is treated as a depth-dependent parameter. A uniform $\tau_M$ is a known oversimplification; future work will incorporate temperature-dependent rheology.
+
+\subsection{Coordinate System and Normalization}
+\label{sec:coords}
+All spatial coordinates are normalized to the half-open cube $[-1, 1]^2 \times [-1, 0]$. The $x$ and $y$ axes are isotropic in UTM meters; the $z$ axis uses the convention $z = 0$ at the Earth's surface and $z = -1$ at the maximum depth of the velocity model. This $z$-asymmetry is deliberate: the network is evaluated only on the physical crustal volume $\{z \in [-1, 0]\}$, the traction-free surface boundary condition applies at $z = 0$, and the gravitational body force acts in the $-z$ direction. Using a symmetric $[-1, 1]$ range in $z$ would force the network to represent the unphysical half-space $z > 0$ (above the surface) and would double the collocation domain without adding information.
+
+The bounding box is taken as the union of the GPS, declustered catalog, and tomography coverage (after projecting GPS and catalog latitudes/longitudes to the same UTM zone as the velocity model). The characteristic length scale $L_0 = 10^6$~m is half the maximum horizontal extent of this bounding box, and the characteristic depth scale $Z_0$ is the maximum depth of the velocity model. Surface collocation points for the traction-free boundary condition are placed at $z = 0$; volume collocation points are sampled uniformly on $[-1, 0]$ in $z$.
 
 \subsection{Kinematic Data Constraints ($\mathcal{L}_{\text{data}}$)}
 GPS strain-rate azimuths $\theta_{\text{obs}}$ constrain the predicted maximum horizontal stress orientation $\theta_{\text{pred}}$ at the surface. The azimuthal loss handles the $180^\circ$ ambiguity of the stress tensor \cite{Heidbach2018}:
@@ -173,7 +180,7 @@ The neural network $f_\theta : \mathbb{R}^3 \to \mathbb{R}^9$ maps normalized sp
 \begin{itemize}
     \item \textbf{Fourier Feature Mapping} \cite{Tancik2020}: random Fourier projection $\gamma(\mathbf{x}) = [\sin(2\pi\mathbf{B}\mathbf{x}), \cos(2\pi\mathbf{B}\mathbf{x})]$ to overcome the spectral bias of standard MLPs, enabling resolution of high-frequency stress gradients near fault zones.
     \item \textbf{Fully-connected MLP}: 4 hidden layers with $\tanh$ activation and Xavier initialization.
-    \item \textbf{Non-dimensionalization}: all quantities are scaled by characteristic values ($S_0 = 1$~GPa, $V_0 = 10^{-9}$~m/s, $L_0 = 10^6$~m) to ensure $O(1)$ loss residuals.
+    \item \textbf{Non-dimensionalization}: all quantities are scaled by characteristic values ($S_0 = 1$~GPa, $V_0 = 10^{-9}$~m/s, $L_0 = 10^6$~m) to ensure $O(1)$ loss residuals. Spatial coordinates follow the asymmetric convention $[-1, 1]^2 \times [-1, 0]$ described in Section~\ref{sec:coords}.
 \end{itemize}
 
 \section{Data Sources}
