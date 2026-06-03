@@ -47,9 +47,10 @@
 %        conversions (new Section 2.5.4 + Scordilis2006 bibitem).
 %   P.5  Magnitude of completeness M_c: MAXC + 0.2 and GFT (90%),
 %        adopted M_c = max(both). New Section 2.5.5.
+%   P.6  Aftershock declustering: Zaliapin-Ben-Zion 2008 nearest-neighbor
+%        with b=1.0, d_f=1.6, eta_0=1.0. New Section 2.5.6.
 %
 % Pending amendments (queued for review):
-%   P.6  Declustering parameters (Zaliapin-Ben-Zion)
 %   P.7  Constitutive law: viscous-only (remove elastic)
 %   P.8  Network hyperparameter formalization
 %   P.10 Random seed policy
@@ -195,6 +196,25 @@ The adopted $M_c$ is
     \label{eq:mc_def}
 \end{equation}
 The max-combination prevents the GFT estimate from undershooting when it identifies a higher threshold than MAXC, while the MAXC $+0.2$ correction prevents the typical MAXC bias from propagating. Both intermediate values and the adopted $M_c$ are reported alongside the number of events retained, $N_{\text{eq}}$, so that the sensitivity of subsequent results to the choice of $M_c$ is auditable. Events with $M_w^{\text{uni}} < M_c$ are dropped before the declustering step.
+
+\subsubsection{Aftershock Declustering}
+\label{sec:decluster}
+The Poisson NLL of Eq.~\ref{eq:poisson_mc} assumes that the catalog is a stationary, independent point process in space. Real seismicity catalogs violate this: aftershock sequences are triggered cascades, not independent events, and they cluster strongly in space and time. Including triggered events as if they were independent would (i) inflate the apparent rate $R(\mathbf{x})$ in active aftershock zones and (ii) bias the rate-vs-CFF relationship.
+
+We therefore decluster the catalog using the Zaliapin--Ben-Zion nearest-neighbor method \cite{Zaliapin2008}. For each event $j$ we identify the most likely parent $i$ (the event with the smallest rescaled distance $\eta_{ij}$ among those that occurred before $j$) and classify $j$ as a triggered offspring if $\eta_{ij} < \eta_0$. The rescaled distance is
+\begin{equation}
+    \eta_{ij} = T_{ij} \cdot R_{ij}^{d_f} \cdot 10^{-b\,M_i / 2},
+    \label{eq:zb_distance}
+\end{equation}
+where $T_{ij}$ is the temporal separation in years, $R_{ij}$ is the 3D hypocentral separation in km, $d_f$ is the fractal dimension of the earthquake spatial distribution, $b$ is the regional Gutenberg-Richter $b$-value, and $M_i$ is the parent moment magnitude. The units are absorbed by the empirical constants in \cite{Zaliapin2008} (originally $T$ in years, $R$ in km, $b$ in moment-magnitude units).
+
+We adopt the following \textbf{declustering parameters}, consistent with the crustal-tectonic setting of Central Iran:
+\begin{itemize}
+    \item $b = 1.0$ (regional Gutenberg-Richter $b$-value, taken as the median of $b$-values reported for Central Iran; sensitivity to $b \in [0.8, 1.2]$ is reported in the ablation tables).
+    \item $d_f = 1.6$ (fractal dimension of the spatial earthquake distribution; standard value for epicentral distances in tectonically active crust \cite{Zaliapin2008}).
+    \item $\eta_0 = 1.0$ (the threshold below which an event is classified as triggered; the standard choice for crustal seismicity that gives a declustered catalog with $b$-value approximately equal to the regional $b$-value when the $b$-value input is correct).
+\end{itemize}
+The result of declustering is a catalog in which each event is flagged as either \texttt{independent} (a potential parent) or \texttt{triggered} (an offspring). Only \texttt{independent} events are passed to the Poisson NLL term. The number of triggered events removed, $N_{\text{trig}} = N_{\text{pre}} - N_{\text{post}}$, is reported alongside $N_{\text{eq}}$ and $M_c$ in the validation tables. The declustering step is applied \emph{after} magnitude unification (Section~\ref{sec:mag_unif}) and \emph{after} the magnitude-of-completeness filter (Section~\ref{sec:mc_est}); it is the third and final preprocessing step before the catalog is consumed by $\mathcal{L}_{\text{seis}}$.
 
 \subsection{Total Loss}
 \begin{equation}
