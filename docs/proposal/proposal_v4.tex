@@ -43,9 +43,10 @@
 %   P.3  UTM zone handling: single-zone (zone 39) restricted to Central
 %        Iran subset (48E-54E, 25N-40N) with conformal distortion analysis;
 %        also fixes GPS count to N=209 in Data Sources item 1.
+%   P.4  Magnitude unification rule: Mw priority, else Scordilis 2006
+%        conversions (new Section 2.5.4 + Scordilis2006 bibitem).
 %
 % Pending amendments (queued for review):
-%   P.4  Magnitude unification rule (Mw priority + Scordilis conversions)
 %   P.5  Magnitude of completeness (MAXC + GFT cross-check)
 %   P.6  Declustering parameters (Zaliapin-Ben-Zion)
 %   P.7  Constitutive law: viscous-only (remove elastic)
@@ -155,6 +156,29 @@ Both terms are evaluated in practice by Monte Carlo. The first term is averaged 
 \end{equation}
 where $V_\Omega = (X_{\max} - X_{\min})(Y_{\max} - Y_{\min})(Z_{\max} - Z_{\min})$ is the physical domain volume in m$^3$, computed from the union of the GPS, catalog, and tomography bounding boxes (after coordinate projection to a common reference frame), and $N_{\text{coll}}$ is the number of physics collocation points sampled per training step. The $1/N_{\text{eq}}$ normalization on the first term ensures that the data-fit and integral contributions are on comparable scales during loss-weight tuning; without it, the magnitude of the first term would scale with catalog size and dominate $w_{\text{seis}}$ selection.
 
+\subsubsection{Catalog Magnitude Unification}
+\label{sec:mag_unif}
+Historical and instrumental catalogs typically report events with multiple magnitude scales simultaneously ($M_w$, $M_s$, $m_b$, $M_L$, $M_I$). Different scales saturate at different true moment magnitudes: $m_b$ saturates near $6.5$, $M_s$ near $8.0$, while $M_w$ is unbounded. Taking the maximum across reported scales (a heuristic used in earlier versions of the code) systematically \textit{overestimates} the true moment magnitude, because a high $m_b$ value (which reflects high-frequency radiation, not size) is taken to indicate a larger earthquake than it physically represents.
+
+We therefore adopt the following \textbf{unification rule}, applied per event in priority order:
+\begin{enumerate}
+    \item If $M_w$ is reported, use it directly.
+    \item Else, if $M_s$ is reported and $3.0 \le M_s \le 6.1$, convert via \cite{Scordilis2006}:
+          \begin{equation}
+              M_w = 0.67\,M_s + 2.07.
+              \label{eq:ms_to_mw}
+          \end{equation}
+          For $M_s > 6.1$ the $M_s = M_w$ identity is used (the $M_s$ scale is already calibrated to moment in this range).
+    \item Else, if $m_b$ is reported and $m_b \le 6.1$, convert via \cite{Scordilis2006}:
+          \begin{equation}
+              M_w = 0.85\,m_b + 1.03.
+              \label{eq:mb_to_mw}
+          \end{equation}
+          For $m_b > 6.1$ the conversion is unreliable and the event is dropped.
+    \item Else (only $M_L$, $M_I$, or no magnitude reported), the event is dropped.
+\end{enumerate}
+The resulting unified magnitude is written as a single column $M_w^{\text{uni}}$ in the cleaned catalog. This rule is applied \emph{before} the magnitude-of-completeness filter and before declustering (the latter two steps will be added in upcoming amendments P.5 and P.6; for now we note that magnitude unification is the first preprocessing step in the pipeline).
+
 \subsection{Total Loss}
 \begin{equation}
     \mathcal{L}_{\text{total}} = w_{\text{pde}}\,\mathcal{L}_{\text{PDE}} + w_{\text{const}}\,\mathcal{L}_{\text{const}} + w_{\text{data}}\,\mathcal{L}_{\text{data}} + w_{\text{bc}}\,\mathcal{L}_{\text{BC}} + w_{\text{seis}}\,\mathcal{L}_{\text{seis}}
@@ -244,6 +268,9 @@ Ogata, Y. (1998). Space-time point-process models for earthquake occurrences. \t
 
 \bibitem{Wiemer2000}
 Wiemer, S. \& Wyss, M. (2000). Minimum magnitude of completeness in earthquake catalogs. \textit{Bull.\ Seismol.\ Soc.\ Am.}\ \textbf{90}, 859--869.
+
+\bibitem{Scordilis2006}
+Scordilis, E.M. (2006). Empirical global relations converting $M_S$ and $m_b$ to moment magnitude. \textit{J.\ Seismol.}\ \textbf{10}, 225--236.
 
 \bibitem{Zaliapin2008}
 Zaliapin, I. \& Ben-Zion, Y. (2008). Earthquake clusters in southern California. \textit{J.\ Geophys.\ Res.}\ \textbf{113}, B12301.
